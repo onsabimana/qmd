@@ -2,13 +2,14 @@
  * Context management commands
  */
 
-import { withDbAsync, withDb } from "src/database/connection";
-import { getPwd, homedir, resolve } from "src/utils/path";
-import { isVirtualPath, parseVirtualPath } from "src/utils/virtual-path";
-import { ContextService } from "src/core/context";
 import { CollectionManager } from "src/core/collections";
+import { ContextService } from "src/core/context";
+import { withDb, withDbAsync } from "src/database/connection";
 import { detectCollectionFromPath } from "src/utils/database";
+import { logger } from "src/utils/logger";
+import { getPwd, homedir, resolve } from "src/utils/path";
 import { colors as c } from "src/utils/terminal";
+import { isVirtualPath, parseVirtualPath } from "src/utils/virtual-path";
 
 /**
  * Add context for a path
@@ -25,8 +26,8 @@ export async function contextAdd(pathArg: string | undefined, contextText: strin
         for (const coll of collections) {
           contextService.setContext(coll.name, "", contextText);
         }
-        console.log(`${c.green}✓${c.reset} Added global context to ${collections.length} collection(s)`);
-        console.log(`${c.dim}Context: ${contextText}${c.reset}`);
+        logger.success(`Added global context to ${collections.length} collection(s)`);
+        logger.dim(`Context: ${contextText}`);
         return;
       }
 
@@ -44,21 +45,21 @@ export async function contextAdd(pathArg: string | undefined, contextText: strin
       if (isVirtualPath(fsPath)) {
         const parsed = parseVirtualPath(fsPath);
         if (!parsed) {
-          console.error(`${c.yellow}Invalid virtual path: ${fsPath}${c.reset}`);
+          logger.error(`Invalid virtual path: ${fsPath}`);
           process.exit(1);
         }
 
         contextService.setContext(parsed.collectionName, parsed.path, contextText);
-        console.log(`${c.green}✓${c.reset} Added context for: qmd://${parsed.collectionName}/${parsed.path || ""}`);
-        console.log(`${c.dim}Context: ${contextText}${c.reset}`);
+        logger.success(`Added context for: qmd://${parsed.collectionName}/${parsed.path || ""}`);
+        logger.dim(`Context: ${contextText}`);
         return;
       }
 
       // Detect collection from filesystem path
       const detected = detectCollectionFromPath(db, fsPath);
       if (!detected) {
-        console.error(`${c.yellow}Path is not in any indexed collection: ${fsPath}${c.reset}`);
-        console.error(`${c.dim}Run 'qmd status' to see indexed collections${c.reset}`);
+        logger.error(`Path is not in any indexed collection: ${fsPath}`);
+        logger.info(`Run 'qmd status' to see indexed collections`);
         process.exit(1);
       }
 
@@ -67,11 +68,11 @@ export async function contextAdd(pathArg: string | undefined, contextText: strin
       const displayPath = detected.relativePath
         ? `qmd://${detected.collectionName}/${detected.relativePath}`
         : `qmd://${detected.collectionName}/`;
-      console.log(`${c.green}✓${c.reset} Added context for: ${displayPath}`);
-      console.log(`${c.dim}Context: ${contextText}${c.reset}`);
+      logger.success(`Added context for: ${displayPath}`);
+      logger.dim(`Context: ${contextText}`);
     } catch (error) {
       if (error instanceof Error) {
-        console.error(`${c.red}Error:${c.reset} ${error.message}`);
+        logger.error(error.message);
       }
       process.exit(1);
     }
@@ -88,24 +89,25 @@ export function contextList(): void {
     const contexts = contextService.listAllContexts();
 
     if (contexts.length === 0) {
-      console.log(`${c.dim}No contexts configured. Use 'qmd context add' to add one.${c.reset}`);
+      logger.dim(`No contexts configured. Use 'qmd context add' to add one.`);
       return;
     }
 
-    console.log(`\n${c.bold}Configured Contexts${c.reset}\n`);
+    let output = `\n${c.bold}Configured Contexts${c.reset}\n\n`;
 
     let lastCollection = "";
     for (const ctx of contexts) {
       if (ctx.collectionName !== lastCollection) {
-        console.log(`${c.cyan}${ctx.collectionName}${c.reset}`);
+        output += `${c.cyan}${ctx.collectionName}${c.reset}\n`;
         lastCollection = ctx.collectionName;
       }
 
       const path = ctx.path || "/";
       const displayPath = ctx.path ? `  ${path}` : "  / (root)";
-      console.log(`${displayPath}`);
-      console.log(`    ${c.dim}${ctx.context}${c.reset}`);
+      output += `${displayPath}\n`;
+      output += `    ${c.dim}${ctx.context}${c.reset}\n`;
     }
+    logger.info(output);
   });
 }
 
@@ -130,7 +132,7 @@ export function contextRemove(pathArg: string): void {
             // Context might not exist for this collection
           }
         }
-        console.log(`${c.green}✓${c.reset} Removed ${removed} global context(s)`);
+        logger.success(`Removed ${removed} global context(s)`);
         return;
       }
 
@@ -138,19 +140,19 @@ export function contextRemove(pathArg: string): void {
       if (isVirtualPath(pathArg)) {
         const parsed = parseVirtualPath(pathArg);
         if (!parsed) {
-          console.error(`${c.yellow}Invalid virtual path: ${pathArg}${c.reset}`);
+          logger.error(`Invalid virtual path: ${pathArg}`);
           process.exit(1);
         }
 
         contextService.deleteContext(parsed.collectionName, parsed.path);
-        console.log(`${c.green}✓${c.reset} Removed context for: ${pathArg}`);
+        logger.success(`Removed context for: ${pathArg}`);
         return;
       }
 
       // Detect from filesystem path
       const detected = detectCollectionFromPath(db, pathArg);
       if (!detected) {
-        console.error(`${c.yellow}Path is not in any indexed collection: ${pathArg}${c.reset}`);
+        logger.error(`Path is not in any indexed collection: ${pathArg}`);
         process.exit(1);
       }
 
@@ -159,13 +161,13 @@ export function contextRemove(pathArg: string): void {
       const displayPath = detected.relativePath
         ? `qmd://${detected.collectionName}/${detected.relativePath}`
         : `qmd://${detected.collectionName}/`;
-      console.log(`${c.green}✓${c.reset} Removed context for: ${displayPath}`);
+      logger.success(`Removed context for: ${displayPath}`);
     } catch (error) {
       if (error instanceof Error) {
         if (error.message.includes("not found")) {
-          console.error(`${c.yellow}${error.message}${c.reset}`);
+          logger.warn(error.message);
         } else {
-          console.error(`${c.red}Error:${c.reset} ${error.message}`);
+          logger.error(error.message);
         }
       }
       process.exit(1);

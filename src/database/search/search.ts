@@ -140,7 +140,7 @@ export class SearchRepository {
         SELECT id FROM documents WHERE collection_id = ?
       )
     `,
-      collectionId,
+      [collectionId],
     );
 
     // Rebuild for this collection
@@ -152,7 +152,7 @@ export class SearchRepository {
       JOIN content c ON c.hash = d.hash
       WHERE d.collection_id = ? AND d.active = 1
     `,
-      collectionId,
+      [collectionId],
     );
   }
 
@@ -172,7 +172,7 @@ export class SearchRepository {
       JOIN content c ON c.hash = d.hash
       WHERE d.id = ? AND d.active = 1
     `,
-      documentId,
+      [documentId],
     );
   }
 

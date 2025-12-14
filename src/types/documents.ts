@@ -55,3 +55,25 @@ export type MultiGetFile =
       fromLine?: number;
       maxLines?: number;
     };
+
+/**
+ * Multi-get file result from store
+ */
+export type MultiGetFileResult =
+  | {
+      filepath: string;
+      displayPath: string;
+      title: string;
+      body: string;
+      context: string | null;
+      skipped: false;
+    }
+  | {
+      filepath: string;
+      displayPath: string;
+      title: string;
+      body: string;
+      context: string | null;
+      skipped: true;
+      skipReason: string;
+    };

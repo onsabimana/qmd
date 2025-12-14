@@ -10,22 +10,23 @@
 
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
-import { createConnection } from "src/database/connection";
-import { CollectionRepository, DocumentRepository } from "src/database";
-import { DocumentService } from "src/core/documents";
-import { SearchService } from "src/core/search";
-import { ContextService } from "src/core/context";
-import { CollectionManager } from "src/core/collections";
-import { extractSnippet } from "src/utils/text";
+import type { RankedResult } from "src/commands/search/types";
 import {
   DEFAULT_EMBED_MODEL,
+  DEFAULT_MULTI_GET_MAX_BYTES,
   DEFAULT_QUERY_MODEL,
   DEFAULT_RERANK_MODEL,
-  DEFAULT_MULTI_GET_MAX_BYTES,
 } from "src/config";
-import type { RankedResult } from "src/commands/search/types";
+import { CollectionManager } from "src/core/collections";
+import { ContextService } from "src/core/context";
+import { DocumentService } from "src/core/documents";
+import { SearchService } from "src/core/search";
+import { CollectionRepository, DocumentRepository } from "src/database";
+import { createConnection } from "src/database/connection";
 import { reciprocalRankFusion } from "src/utils/search";
+import { extractSnippet } from "src/utils/text";
+import { logger } from "src/utils/logger";
+import { z } from "zod";
 
 // =============================================================================
 // Types for structured content
@@ -147,7 +148,10 @@ export async function startMcpServer(): Promise<void> {
         };
       }
 
-      const context = contextService.getContextForFile(doc.filepath);
+      // Build display path from collection + path
+      const collection = collRepo.getById(doc.collection_id);
+      const displayPath = collection ? `qmd://${collection.name}/${doc.path}` : doc.path;
+      const context = contextService.getContextForFile(displayPath);
 
       let text = doc.body;
       if (context) {
@@ -158,8 +162,8 @@ export async function startMcpServer(): Promise<void> {
         contents: [
           {
             uri: uri.href,
-            name: doc.display_path,
-            title: doc.title || doc.display_path,
+            name: displayPath,
+            title: doc.title || displayPath,
             mimeType: "text/markdown",
             text,
           },
@@ -764,5 +768,8 @@ You can also access documents directly via the \`qmd://\` URI scheme:
 
 // Run if this is the main module
 if (import.meta.main) {
-  startMcpServer().catch(console.error);
+  startMcpServer().catch((err) => {
+    logger.error(`MCP server failed to start: ${err}`);
+    process.exit(1);
+  });
 }

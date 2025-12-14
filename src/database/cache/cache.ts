@@ -104,7 +104,7 @@ export class CacheRepository {
          ORDER BY created_at DESC 
          LIMIT ?
        )`,
-      maxSize,
+      [maxSize],
     );
   }
 

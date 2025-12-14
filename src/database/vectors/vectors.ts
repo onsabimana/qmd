@@ -47,7 +47,8 @@ export class VectorRepository {
     if (tableInfo) {
       const match = tableInfo.sql.match(/float\[(\d+)\]/);
       const hasHashSeq = tableInfo.sql.includes("hash_seq");
-      if (match && parseInt(match[1]) === dimensions && hasHashSeq) {
+      const matchedDimensions = match?.[1] ? parseInt(match[1], 10) : null;
+      if (matchedDimensions === dimensions && hasHashSeq) {
         return; // Table already exists with correct dimensions
       }
       // Drop table if dimensions don't match or schema is outdated

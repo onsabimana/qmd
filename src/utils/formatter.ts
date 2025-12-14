@@ -5,9 +5,9 @@
  * JSON, CSV, XML, Markdown, files list, and CLI (colored terminal output).
  */
 
+import type { FormatOptions, OutputFormat, SearchResult } from "src/commands/search/types";
+import type { DocumentResult, MultiGetFileResult, MultiGetResult } from "src/types";
 import { extractSnippet } from "./text";
-import type { SearchResult, OutputFormat, FormatOptions } from "src/commands/search/types";
-import type { MultiGetFile, MultiGetResult, DocumentResult } from "src/types";
 
 // =============================================================================
 // Types
@@ -15,7 +15,7 @@ import type { MultiGetFile, MultiGetResult, DocumentResult } from "src/types";
 
 // Types are now centralized in src/types/ and imported above
 
-export type { SearchResult, MultiGetFile, MultiGetResult, DocumentResult, OutputFormat, FormatOptions };
+export type { SearchResult, MultiGetResult, DocumentResult, OutputFormat, FormatOptions };
 
 // =============================================================================
 // Escape Helpers
@@ -149,7 +149,7 @@ export function searchResultsToMcpCsv(
 /**
  * Format documents as JSON
  */
-export function documentsToJson(results: MultiGetFile[]): string {
+export function documentsToJson(results: MultiGetFileResult[]): string {
   const output = results.map((r) => ({
     file: r.displayPath,
     title: r.title,
@@ -162,7 +162,7 @@ export function documentsToJson(results: MultiGetFile[]): string {
 /**
  * Format documents as CSV
  */
-export function documentsToCsv(results: MultiGetFile[]): string {
+export function documentsToCsv(results: MultiGetFileResult[]): string {
   const header = "file,title,context,skipped,body";
   const rows = results.map((r) =>
     [r.displayPath, r.title, r.context || "", r.skipped ? "true" : "false", r.skipped ? r.skipReason || "" : r.body]
@@ -175,7 +175,7 @@ export function documentsToCsv(results: MultiGetFile[]): string {
 /**
  * Format documents as files list
  */
-export function documentsToFiles(results: MultiGetFile[]): string {
+export function documentsToFiles(results: MultiGetFileResult[]): string {
   return results
     .map((r) => {
       const ctx = r.context ? `,"${r.context.replace(/"/g, '""')}"` : "";
@@ -188,7 +188,7 @@ export function documentsToFiles(results: MultiGetFile[]): string {
 /**
  * Format documents as Markdown
  */
-export function documentsToMarkdown(results: MultiGetFile[]): string {
+export function documentsToMarkdown(results: MultiGetFileResult[]): string {
   return results
     .map((r) => {
       let md = `## ${r.displayPath}\n\n`;
@@ -207,7 +207,7 @@ export function documentsToMarkdown(results: MultiGetFile[]): string {
 /**
  * Format documents as XML
  */
-export function documentsToXml(results: MultiGetFile[]): string {
+export function documentsToXml(results: MultiGetFileResult[]): string {
   const items = results.map((r) => {
     let xml = "  <document>\n";
     xml += `    <file>${escapeXml(r.displayPath)}</file>\n`;
@@ -328,7 +328,7 @@ export function formatSearchResults(results: SearchResult[], format: OutputForma
 /**
  * Format documents to the specified output format
  */
-export function formatDocuments(results: MultiGetFile[], format: OutputFormat): string {
+export function formatDocuments(results: MultiGetFileResult[], format: OutputFormat): string {
   switch (format) {
     case "json":
       return documentsToJson(results);

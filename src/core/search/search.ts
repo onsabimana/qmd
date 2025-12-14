@@ -6,32 +6,17 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { normalizeScores, reciprocalRankFusion } from "src/commands/search/utils";
+import type { RerankDocument } from "src/core/llm";
+import { getLLM } from "src/core/llm";
 import {
+  CacheRepository,
+  CollectionRepository,
+  DocumentRepository,
   SearchRepository,
   VectorRepository,
-  CollectionRepository,
-  CacheRepository,
-  DocumentRepository,
 } from "src/database";
-import { getLLM } from "src/core/llm";
-import type { RerankDocument } from "src/core/llm";
-import { reciprocalRankFusion, normalizeScores } from "src/commands/search/utils";
-
-export interface SearchOptions {
-  collections?: string[];
-  limit?: number;
-  minScore?: number;
-}
-
-export interface SearchResult {
-  file: string;
-  displayPath: string;
-  title: string;
-  body: string;
-  score: number;
-  source: "fts" | "vec";
-  chunkPos?: number;
-}
+import type { SearchOptions, SearchResult } from "./types";
 
 export interface HybridSearchOptions extends SearchOptions {
   hybridWeight?: number;
@@ -63,7 +48,7 @@ export class SearchService {
 
     let collectionId: number | undefined;
     if (collections && collections.length > 0) {
-      const coll = this.collectionRepo.getByName(collections[0]);
+      const coll = this.collectionRepo.getByName(collections[0]!);
       collectionId = coll?.id;
     }
 
@@ -97,7 +82,7 @@ export class SearchService {
 
     let collectionId: number | undefined;
     if (collections && collections.length > 0) {
-      const coll = this.collectionRepo.getByName(collections[0]);
+      const coll = this.collectionRepo.getByName(collections[0]!);
       collectionId = coll?.id;
     }
 
@@ -158,15 +143,22 @@ export class SearchService {
       this.searchVector(query, model, { collections, limit }),
     ]);
 
-    // Apply RRF
-    const fusedResults = reciprocalRankFusion(ftsResults, vecResults, hybridWeight);
+    // Apply RRF - pass as separate arrays
+    const fusedResults = reciprocalRankFusion([ftsResults, vecResults], [1 - hybridWeight, hybridWeight]);
+
+    // Convert RankedResult back to SearchResult (RRF strips source/chunkPos)
+    const searchResults: SearchResult[] = fusedResults.map((r) => ({
+      ...r,
+      source: "fts" as const, // Hybrid results - pick dominant source
+      chunkPos: undefined,
+    }));
 
     // Optionally rerank
-    if (useRerank && fusedResults.length > 0) {
-      return await this.rerank(query, fusedResults, rerankModel);
+    if (useRerank && searchResults.length > 0) {
+      return await this.rerank(query, searchResults, rerankModel);
     }
 
-    return fusedResults.slice(0, limit);
+    return searchResults.slice(0, limit);
   }
 
   /**
@@ -248,8 +240,8 @@ export class SearchService {
 
     // Find first line containing query terms
     let matchLine = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i].toLowerCase().includes(queryLower)) {
+    for (const [i, line] of lines.entries()) {
+      if (line.toLowerCase().includes(queryLower)) {
         matchLine = i;
         break;
       }

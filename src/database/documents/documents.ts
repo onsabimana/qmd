@@ -358,22 +358,6 @@ export class DocumentRepository {
   }
 
   /**
-   * Get document info by hash (for search result enrichment)
-   */
-  getDocumentInfoByHash(hash: string): { path: string; title: string; collection_name: string; doc: string } | null {
-    return this.db
-      .prepare(
-        `SELECT d.path, d.title, c.name as collection_name, content.doc
-         FROM documents d
-         JOIN collections c ON c.id = d.collection_id
-         JOIN content ON content.hash = d.hash
-         WHERE d.hash = ? AND d.active = 1
-         LIMIT 1`,
-      )
-      .get(hash) as { path: string; title: string; collection_name: string; doc: string } | null;
-  }
-
-  /**
    * Check if a document exists
    */
   exists(collection_id: number, path: string): boolean {

@@ -3,10 +3,10 @@
  */
 
 export {
-  search,
-  vectorSearch,
-  querySearch,
+  extractSnippetWithContext,
   getEmbedding,
   outputResults,
-  extractSnippetWithContext,
+  querySearch,
+  search,
+  vectorSearch,
 } from "./search";

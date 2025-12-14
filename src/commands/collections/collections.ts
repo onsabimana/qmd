@@ -2,13 +2,16 @@
  * Collection management commands for QMD
  */
 
-import { withDb, withDbAsync } from "src/database/connection";
-import { DEFAULT_GLOB } from "src/config";
+import { DEFAULT_EMBED_MODEL, DEFAULT_GLOB } from "src/config";
 import { CollectionManager } from "src/core/collections";
+import { VectorService } from "src/core/vectors";
+import { CacheRepository } from "src/database/cache";
+import { withDb, withDbAsync } from "src/database/connection";
+import { logger } from "src/utils/logger";
 import { colors, progress } from "src/utils/terminal";
 import { formatETA, formatTimeAgo } from "src/utils/time";
 
-// Short alias for colors
+// Short alias for colors (still used for inline formatting)
 const c = colors;
 
 export function collectionList(): void {
@@ -17,23 +20,23 @@ export function collectionList(): void {
     const collections = manager.listWithStats();
 
     if (collections.length === 0) {
-      console.log("No collections found. Run 'qmd add .' to create one.");
+      logger.info("No collections found. Run 'qmd add .' to create one.");
       return;
     }
 
-    console.log(`${c.bold}Collections (${collections.length}):${c.reset}\n`);
+    let output = `${c.bold}Collections (${collections.length}):${c.reset}\n\n`;
 
     for (const coll of collections) {
       const updatedAt = new Date(coll.updated_at);
       const timeAgo = formatTimeAgo(updatedAt);
 
-      console.log(`${c.cyan}${coll.name}${c.reset}`);
-      console.log(`  ${c.dim}Path:${c.reset}     ${coll.pwd}`);
-      console.log(`  ${c.dim}Pattern:${c.reset}  ${coll.glob_pattern}`);
-      console.log(`  ${c.dim}Files:${c.reset}    ${coll.document_count}`);
-      console.log(`  ${c.dim}Updated:${c.reset}  ${timeAgo}`);
-      console.log();
+      output += `${c.cyan}${coll.name}${c.reset}\n`;
+      output += `  ${c.dim}Path:${c.reset}     ${coll.pwd}\n`;
+      output += `  ${c.dim}Pattern:${c.reset}  ${coll.glob_pattern}\n`;
+      output += `  ${c.dim}Files:${c.reset}    ${coll.document_count}\n`;
+      output += `  ${c.dim}Updated:${c.reset}  ${timeAgo}\n\n`;
     }
+    logger.data(output);
   });
 }
 
@@ -46,20 +49,21 @@ export async function collectionAdd(pwd: string, globPattern: string, name?: str
 
   try {
     // Now index the files
-    console.log(`Creating collection '${collection.name}'...`);
+    logger.info(`Creating collection '${collection.name}'...`);
     await indexFiles(pwd, globPattern, collection.name);
-    console.log(`${c.green}✓${c.reset} Collection '${collection.name}' created successfully`);
+    logger.success(`Collection '${collection.name}' created successfully`);
   } catch (error) {
     if (error instanceof Error) {
       if (error.message.includes("already exists")) {
-        console.error(`${c.yellow}${error.message}${c.reset}`);
+        let msg = error.message;
         if (error.message.includes("name")) {
-          console.error(`Use a different name with --name <name>`);
+          msg += "\nUse a different name with --name <name>";
         } else {
-          console.error(`\nUse 'qmd add ${globPattern}' to update it, or remove it first.`);
+          msg += `\n\nUse 'qmd add ${globPattern}' to update it, or remove it first.`;
         }
+        logger.warn(msg);
       } else {
-        console.error(`${c.red}Error:${c.reset} ${error.message}`);
+        logger.error(error.message);
       }
     }
     process.exit(1);
@@ -73,15 +77,14 @@ export function collectionRemove(name: string): void {
     try {
       const result = manager.remove(name);
 
-      console.log(`${c.green}✓${c.reset} Removed collection '${name}'`);
-      console.log(`  Deleted ${result.deletedDocs} documents`);
+      let msg = `Removed collection '${name}'\n  Deleted ${result.deletedDocs} documents`;
       if (result.cleanedHashes > 0) {
-        console.log(`  Cleaned up ${result.cleanedHashes} orphaned content hashes`);
+        msg += `\n  Cleaned up ${result.cleanedHashes} orphaned content hashes`;
       }
+      logger.success(msg);
     } catch (error) {
       if (error instanceof Error) {
-        console.error(`${c.yellow}${error.message}${c.reset}`);
-        console.error(`Run 'qmd collection list' to see available collections.`);
+        logger.warn(`${error.message}\nRun 'qmd collection list' to see available collections.`);
       }
       process.exit(1);
     }
@@ -95,18 +98,19 @@ export function collectionRename(oldName: string, newName: string): void {
     try {
       manager.rename(oldName, newName);
 
-      console.log(`${c.green}✓${c.reset} Renamed collection '${oldName}' to '${newName}'`);
-      console.log(
+      logger.success(`Renamed collection '${oldName}' to '${newName}'`);
+      logger.info(
         `  Virtual paths updated: ${c.cyan}qmd://${oldName}/${c.reset} → ${c.cyan}qmd://${newName}/${c.reset}`,
       );
     } catch (error) {
       if (error instanceof Error) {
-        console.error(`${c.yellow}${error.message}${c.reset}`);
+        let msg = error.message;
         if (error.message.includes("not found")) {
-          console.error(`Run 'qmd collection list' to see available collections.`);
+          msg += "\nRun 'qmd collection list' to see available collections.";
         } else if (error.message.includes("already exists")) {
-          console.error(`Choose a different name or remove the existing collection first.`);
+          msg += "\nChoose a different name or remove the existing collection first.";
         }
+        logger.warn(msg);
       }
       process.exit(1);
     }
@@ -118,9 +122,10 @@ export async function indexFiles(pwd: string, globPattern: string = DEFAULT_GLOB
     const manager = new CollectionManager(db);
 
     // Clear Ollama cache on index
-    clearCache(db);
+    const cacheRepo = new CacheRepository(db);
+    cacheRepo.clear();
 
-    console.log(`Collection: ${pwd} (${globPattern})`);
+    logger.info(`Collection: ${pwd} (${globPattern})`);
 
     progress.indeterminate();
 
@@ -147,26 +152,26 @@ export async function indexFiles(pwd: string, globPattern: string = DEFAULT_GLOB
       progress.clear();
 
       if (total === 0) {
-        console.log("No files found matching pattern.");
+        logger.info("No files found matching pattern.");
         return;
       }
 
-      console.log(
-        `\nIndexed: ${result.indexed} new, ${result.updated} updated, ${result.unchanged} unchanged, ${result.removed} removed`,
-      );
+      let resultMsg = `\nIndexed: ${result.indexed} new, ${result.updated} updated, ${result.removed} removed, ${result.skipped} skipped`;
       if (result.orphanedContent > 0) {
-        console.log(`Cleaned up ${result.orphanedContent} orphaned content hash(es)`);
+        resultMsg += `\nCleaned up ${result.orphanedContent} orphaned content hash(es)`;
       }
+      logger.info(resultMsg);
 
       // Check if vector index needs updating
-      const needsEmbedding = getHashesNeedingEmbedding(db);
+      const vectorService = new VectorService(db);
+      const needsEmbedding = vectorService.getHashesNeedingEmbedding(DEFAULT_EMBED_MODEL);
       if (needsEmbedding > 0) {
-        console.log(`\nRun 'qmd embed' to update embeddings (${needsEmbedding} unique hashes need vectors)`);
+        logger.info(`\nRun 'qmd embed' to update embeddings (${needsEmbedding} unique hashes need vectors)`);
       }
     } catch (error) {
       progress.clear();
       if (error instanceof Error) {
-        console.error(`${c.red}Error:${c.reset} ${error.message}`);
+        logger.error(error.message);
       }
       process.exit(1);
     }

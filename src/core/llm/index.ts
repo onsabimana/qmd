@@ -2,27 +2,26 @@
  * LLM abstraction layer
  */
 
+export {
+  ensureModelAvailable,
+  formatDocForEmbedding,
+  formatQueryForEmbedding,
+  getDefaultOllama,
+  getLLM,
+  Ollama,
+  setDefaultOllama,
+} from "./llm";
 export type {
-  TokenLogProb,
   EmbeddingResult,
-  GenerateResult,
-  RerankDocumentResult,
-  RerankResult,
-  ModelInfo,
   EmbedOptions,
   GenerateOptions,
-  RerankOptions,
-  RerankDocument,
+  GenerateResult,
   LLM,
+  ModelInfo,
   OllamaConfig,
+  RerankDocument,
+  RerankDocumentResult,
+  RerankOptions,
+  RerankResult,
+  TokenLogProb,
 } from "./types";
-
-export {
-  formatQueryForEmbedding,
-  formatDocForEmbedding,
-  Ollama,
-  getDefaultOllama,
-  setDefaultOllama,
-  getLLM,
-  ensureModelAvailable,
-} from "./llm";

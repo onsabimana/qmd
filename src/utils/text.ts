@@ -61,8 +61,8 @@ export function extractSnippet(
   let bestScore = -1;
 
   // Find line with most query term matches
-  for (let i = 0; i < lines.length; i++) {
-    const lineLower = lines[i].toLowerCase();
+  for (const [i, line] of lines.entries()) {
+    const lineLower = line.toLowerCase();
     let score = 0;
     for (const term of queryTerms) {
       if (lineLower.includes(term)) score++;

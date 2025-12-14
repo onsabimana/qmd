@@ -1,20 +1,20 @@
 #!/usr/bin/env bun
 import { Command } from "commander";
-import { collectionList, collectionAdd, collectionRemove, collectionRename } from "src/commands/collections";
+import { collectionAdd, collectionList, collectionRemove, collectionRename } from "src/commands/collections";
 import { contextAdd, contextList, contextRemove } from "src/commands/context";
-import { getDocument, multiGet, listFiles } from "src/commands/documents";
+import { getDocument, listFiles, multiGet } from "src/commands/documents";
 import {
+  cleanup as maintenanceCleanup,
   showStatus as maintenanceShowStatus,
   updateCollections as maintenanceUpdateCollections,
   vectorIndex as maintenanceVectorIndex,
-  cleanup as maintenanceCleanup,
 } from "src/commands/maintenance";
-import { search, vectorSearch, querySearch, getEmbedding } from "src/commands/search";
+import { getEmbedding, querySearch, search, vectorSearch } from "src/commands/search";
 import type { OutputOptions } from "src/commands/search/types";
-import { getPwd, getRealPath, resolve } from "src/utils/path";
-import { setCustomIndexName } from "src/database/connection";
 import { DEFAULT_EMBED_MODEL, DEFAULT_GLOB, DEFAULT_MULTI_GET_MAX_BYTES } from "src/config";
-import { type OutputFormat } from "src/utils/formatter";
+import { setCustomIndexName } from "src/database/connection";
+import type { OutputFormat } from "src/utils/formatter";
+import { getPwd, getRealPath, resolve } from "src/utils/path";
 import { colors as c, cursor, progress } from "src/utils/terminal";
 
 // Ensure cursor is restored on exit

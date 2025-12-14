@@ -6,31 +6,31 @@
  * Ollama is mocked - tests will fail if any real Ollama calls are made.
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach, mock, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
-import { unlink, mkdtemp, rmdir } from "node:fs/promises";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { mkdtemp, rmdir, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  chunkDocument,
   createStore,
+  type DocumentResult,
+  extractSnippet,
+  extractTitle,
+  formatDocForEmbedding,
+  formatQueryForEmbedding,
+  getCacheKey,
   getDefaultDbPath,
-  homedir,
-  resolve,
   getPwd,
   getRealPath,
   hashContent,
-  extractTitle,
-  formatQueryForEmbedding,
-  formatDocForEmbedding,
-  chunkDocument,
-  reciprocalRankFusion,
-  extractSnippet,
-  getCacheKey,
+  homedir,
   OLLAMA_URL,
-  type Store,
-  type DocumentResult,
-  type SearchResult,
   type RankedResult,
+  reciprocalRankFusion,
+  resolve,
+  type SearchResult,
+  type Store,
 } from "src/core/store";
 
 // =============================================================================

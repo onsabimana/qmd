@@ -2,14 +2,15 @@
  * Document retrieval commands
  */
 
-import { withDb } from "src/database/connection";
-import { isVirtualPath, parseVirtualPath, buildVirtualPath } from "src/utils/virtual-path";
-import { DEFAULT_MULTI_GET_MAX_BYTES } from "src/config";
-import { DocumentService } from "src/core/documents";
-import { CollectionManager } from "src/core/collections";
 import type { OutputFormat } from "src/commands/search/types";
+import { DEFAULT_MULTI_GET_MAX_BYTES } from "src/config";
+import { CollectionManager } from "src/core/collections";
+import { DocumentService } from "src/core/documents";
+import { withDb } from "src/database/connection";
 import { escapeXml } from "src/utils/formatter";
+import { logger } from "src/utils/logger";
 import { colors as c } from "src/utils/terminal";
+import { parseVirtualPath } from "src/utils/virtual-path";
 
 /**
  * Get a single document with optional line filtering
@@ -19,21 +20,22 @@ export function getDocument(filename: string, fromLine?: number, maxLines?: numb
     const service = new DocumentService(db);
 
     // Parse :linenum suffix from filename (e.g., "file.md:100")
-    let inputPath = filename;
-    const colonMatch = inputPath.match(/:(\d+)$/);
-    if (colonMatch && !fromLine) {
-      fromLine = parseInt(colonMatch[1], 10);
-      inputPath = inputPath.slice(0, -colonMatch[0].length);
+    const colonMatch = filename.match(/:(\d+)$/);
+    const inputPath = colonMatch ? filename.slice(0, colonMatch.index) : filename;
+    const lineFromSuffix = colonMatch?.[1] ? parseInt(colonMatch[1], 10) : undefined;
+    if (lineFromSuffix && !fromLine) {
+      fromLine = lineFromSuffix;
     }
 
     const result = service.findDocument(inputPath, { includeBody: true });
 
     if ("error" in result) {
-      console.error(`Document not found: ${filename}`);
+      let errorMsg = `Document not found: ${filename}`;
       if (result.similarFiles.length > 0) {
-        console.error(`\nDid you mean one of these?`);
-        result.similarFiles.forEach((f) => console.error(`  ${f}`));
+        errorMsg += "\n\nDid you mean one of these?";
+        result.similarFiles.forEach((f) => (errorMsg += `\n  ${f}`));
       }
+      logger.error(errorMsg);
       process.exit(1);
     }
 
@@ -49,9 +51,9 @@ export function getDocument(filename: string, fromLine?: number, maxLines?: numb
 
     // Output context header if exists
     if (result.context) {
-      console.log(`Folder Context: ${result.context}\n---\n`);
+      logger.data(`Folder Context: ${result.context}\n---\n`);
     }
-    console.log(output);
+    logger.data(output);
   });
 }
 
@@ -74,11 +76,11 @@ export function multiGet(
 
     // Report any errors
     for (const error of errors) {
-      console.error(error);
+      logger.error(error);
     }
 
     if (docs.length === 0) {
-      console.error(`No files matched pattern: ${pattern}`);
+      logger.error(`No files matched pattern: ${pattern}`);
       process.exit(1);
     }
 
@@ -141,7 +143,7 @@ export function multiGet(
       ...(r.context && { context: r.context }),
       ...(r.skipped ? { skipped: true, reason: r.skipReason } : { body: r.body }),
     }));
-    console.log(JSON.stringify(output, null, 2));
+    logger.data(JSON.stringify(output, null, 2));
   } else if (format === "csv") {
     const escapeField = (val: string | null): string => {
       if (val === null || val === undefined) return "";
@@ -151,66 +153,68 @@ export function multiGet(
       }
       return str;
     };
-    console.log("file,title,context,skipped,body");
+    logger.data("file,title,context,skipped,body");
     for (const r of results) {
-      console.log(
-        [r.displayPath, r.title, r.context || "", r.skipped ? "true" : "false", r.skipped ? r.skipReason : r.body]
-          .map(escapeField)
-          .join(","),
-      );
+      const row: Array<string | undefined> = [
+        r.displayPath,
+        r.title,
+        r.context || "",
+        r.skipped ? "true" : "false",
+        r.skipped ? r.skipReason : r.body,
+      ];
+      logger.data(row.map((v) => (v ? escapeField(v) : "")).join(","));
     }
   } else if (format === "files") {
     for (const r of results) {
       const ctx = r.context ? `,"${r.context.replace(/"/g, '""')}"` : "";
       const status = r.skipped ? "[SKIPPED]" : "";
-      console.log(`${r.displayPath}${ctx}${status ? `,${status}` : ""}`);
+      logger.data(`${r.displayPath}${ctx}${status ? `,${status}` : ""}`);
     }
   } else if (format === "md") {
     for (const r of results) {
-      console.log(`## ${r.displayPath}\n`);
-      if (r.title && r.title !== r.displayPath) console.log(`**Title:** ${r.title}\n`);
-      if (r.context) console.log(`**Context:** ${r.context}\n`);
+      let doc = `## ${r.displayPath}\n\n`;
+      if (r.title && r.title !== r.displayPath) doc += `**Title:** ${r.title}\n\n`;
+      if (r.context) doc += `**Context:** ${r.context}\n\n`;
       if (r.skipped) {
-        console.log(`> ${r.skipReason}\n`);
+        doc += `> ${r.skipReason}\n`;
       } else {
-        console.log("```");
-        console.log(r.body);
-        console.log("```\n");
+        doc += `\`\`\`\n${r.body}\n\`\`\`\n`;
       }
+      logger.data(doc);
     }
   } else if (format === "xml") {
-    console.log('<?xml version="1.0" encoding="UTF-8"?>');
-    console.log("<documents>");
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<documents>\n';
     for (const r of results) {
-      console.log("  <document>");
-      console.log(`    <file>${escapeXml(r.displayPath)}</file>`);
-      console.log(`    <title>${escapeXml(r.title)}</title>`);
-      if (r.context) console.log(`    <context>${escapeXml(r.context)}</context>`);
+      xml += "  <document>\n";
+      xml += `    <file>${escapeXml(r.displayPath)}</file>\n`;
+      xml += `    <title>${escapeXml(r.title)}</title>\n`;
+      if (r.context) xml += `    <context>${escapeXml(r.context)}</context>\n`;
       if (r.skipped) {
-        console.log(`    <skipped>true</skipped>`);
-        console.log(`    <reason>${escapeXml(r.skipReason || "")}</reason>`);
+        xml += `    <skipped>true</skipped>\n`;
+        xml += `    <reason>${escapeXml(r.skipReason || "")}</reason>\n`;
       } else {
-        console.log(`    <body>${escapeXml(r.body)}</body>`);
+        xml += `    <body>${escapeXml(r.body)}</body>\n`;
       }
-      console.log("  </document>");
+      xml += "  </document>\n";
     }
-    console.log("</documents>");
+    xml += "</documents>";
+    logger.data(xml);
   } else {
     // CLI format (default)
     for (const r of results) {
-      console.log(`\n${"=".repeat(60)}`);
-      console.log(`File: ${r.displayPath}`);
-      console.log(`${"=".repeat(60)}\n`);
+      let doc = `\n${"=".repeat(60)}\nFile: ${r.displayPath}\n${"=".repeat(60)}\n\n`;
 
       if (r.skipped) {
-        console.log(`[SKIPPED: ${r.skipReason}]`);
+        doc += `[SKIPPED: ${r.skipReason}]`;
+        logger.data(doc);
         continue;
       }
 
       if (r.context) {
-        console.log(`Folder Context: ${r.context}\n---\n`);
+        doc += `Folder Context: ${r.context}\n---\n\n`;
       }
-      console.log(r.body);
+      doc += r.body;
+      logger.data(doc);
     }
   }
 }
@@ -228,14 +232,15 @@ export function listFiles(pathArg?: string): void {
       const collections = collectionManager.listWithStats();
 
       if (collections.length === 0) {
-        console.log("No collections found. Run 'qmd add .' to index files.");
+        logger.info("No collections found. Run 'qmd add .' to index files.");
         return;
       }
 
-      console.log(`${c.bold}Collections:${c.reset}\n`);
+      let output = `${c.bold}Collections:${c.reset}\n`;
       for (const coll of collections) {
-        console.log(`${c.cyan}qmd://${coll.name}/${c.reset} (${coll.document_count} files)`);
+        output += `${c.cyan}qmd://${coll.name}/${c.reset} (${coll.document_count} files)\n`;
       }
+      logger.data(output);
       return;
     }
 
@@ -247,7 +252,7 @@ export function listFiles(pathArg?: string): void {
       // Virtual path format: qmd://collection/path
       const parsed = parseVirtualPath(pathArg);
       if (!parsed) {
-        console.error(`Invalid virtual path: ${pathArg}`);
+        logger.error(`Invalid virtual path: ${pathArg}`);
         process.exit(1);
       }
       collectionName = parsed.collectionName;
@@ -255,7 +260,7 @@ export function listFiles(pathArg?: string): void {
     } else {
       // Just collection name or collection/path
       const parts = pathArg.split("/");
-      collectionName = parts[0];
+      collectionName = parts[0] || "";
       if (parts.length > 1) {
         pathPrefix = parts.slice(1).join("/");
       }
@@ -264,8 +269,7 @@ export function listFiles(pathArg?: string): void {
     // Get the collection
     const coll = collectionManager.getByName(collectionName);
     if (!coll) {
-      console.error(`Collection not found: ${collectionName}`);
-      console.error(`Run 'qmd ls' to see available collections.`);
+      logger.error(`Collection not found: ${collectionName}\nRun 'qmd ls' to see available collections.`);
       process.exit(1);
     }
 
@@ -282,14 +286,14 @@ export function listFiles(pathArg?: string): void {
 
     if (docs.length === 0) {
       if (pathPrefix) {
-        console.log(`No files found under qmd://${collectionName}/${pathPrefix}`);
+        logger.info(`No files found under qmd://${collectionName}/${pathPrefix}`);
       } else {
-        console.log(`No files found in collection: ${collectionName}`);
+        logger.info(`No files found in collection: ${collectionName}`);
       }
       return;
     } // Output virtual paths
     for (const doc of docs) {
-      console.log(doc.displayPath);
+      logger.data(doc.displayPath);
     }
   });
 }

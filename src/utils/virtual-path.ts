@@ -3,8 +3,8 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { resolve } from "./path";
 import { CollectionRepository } from "src/database/collections";
+import { resolve } from "./path";
 
 export interface VirtualPath {
   collectionName: string;
@@ -16,8 +16,8 @@ export interface VirtualPath {
  * into its components.
  */
 export function parseVirtualPath(virtualPath: string): VirtualPath | null {
-  const match = virtualPath.match(/^qmd:\/\/([^\/]+)\/(.+)$/);
-  if (!match) return null;
+  const match = virtualPath.match(/^qmd:\/\/([^/]+)\/(.+)$/);
+  if (!match?.[1] || !match[2]) return null;
   return {
     collectionName: match[1],
     path: match[2],

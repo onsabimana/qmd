@@ -6,9 +6,9 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { DocumentRepository, CollectionRepository, ContextRepository, type DocumentWithContent } from "src/database";
+import { CollectionRepository, ContextRepository, DocumentRepository, type DocumentWithContent } from "src/database";
 
-export interface DocumentResult {
+export interface DocumentInfo {
   filepath: string;
   displayPath: string;
   title: string;
@@ -38,7 +38,7 @@ export class DocumentService {
   private collectionRepo: CollectionRepository;
   private contextRepo: ContextRepository;
 
-  constructor(private db: Database) {
+  constructor(db: Database) {
     this.documentRepo = new DocumentRepository(db);
     this.collectionRepo = new CollectionRepository(db);
     this.contextRepo = new ContextRepository(db);
@@ -47,13 +47,13 @@ export class DocumentService {
   /**
    * Find a document by filename/path with fuzzy matching
    */
-  findDocument(filename: string, options: { includeBody?: boolean } = {}): DocumentResult | DocumentNotFound {
+  findDocument(filename: string, options: { includeBody?: boolean } = {}): DocumentInfo | DocumentNotFound {
     let filepath = filename;
 
     // Strip :line suffix if present
     const colonMatch = filepath.match(/:(\d+)$/);
-    if (colonMatch) {
-      filepath = filepath.slice(0, -colonMatch[0].length);
+    if (colonMatch?.index !== undefined) {
+      filepath = filepath.slice(0, colonMatch.index);
     }
 
     // Expand ~ to home directory
@@ -68,7 +68,7 @@ export class DocumentService {
     // Try exact collection + path match from virtual path
     if (filepath.startsWith("qmd://")) {
       const parts = filepath.slice(6).split("/");
-      const collectionName = parts[0];
+      const collectionName = parts[0]!;
       const path = parts.slice(1).join("/");
 
       const collection = this.collectionRepo.getByName(collectionName);
@@ -95,7 +95,7 @@ export class DocumentService {
       const pattern = `%${filepath}%`;
       const matches = this.documentRepo.findByPathPattern(pattern, 1);
       if (matches.length > 0) {
-        doc = this.documentRepo.getWithContent(matches[0].id);
+        doc = this.documentRepo.getWithContent(matches[0]!.id);
       }
     }
 
@@ -113,7 +113,7 @@ export class DocumentService {
     const displayPath = `qmd://${collection.name}/${doc.path}`;
     const context = this.contextRepo.getContextForPath(doc.collection_id, doc.path);
 
-    const result: DocumentResult = {
+    const result: DocumentInfo = {
       filepath: `${collection.pwd}/${doc.path}`,
       displayPath,
       title: doc.title,
@@ -237,7 +237,7 @@ export class DocumentService {
   /**
    * Get documents by collection
    */
-  listByCollection(collectionName: string): DocumentResult[] {
+  listByCollection(collectionName: string): DocumentInfo[] {
     const collection = this.collectionRepo.getByName(collectionName);
     if (!collection) return [];
 

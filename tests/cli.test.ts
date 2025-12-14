@@ -5,8 +5,8 @@
  * These tests spawn actual qmd processes to verify end-to-end functionality.
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
-import { mkdtemp, rm, writeFile, mkdir } from "fs/promises";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 

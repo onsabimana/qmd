@@ -5,12 +5,12 @@
  * Uses mocked Ollama responses and a test database.
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
-import * as sqliteVec from "sqlite-vec";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as sqliteVec from "sqlite-vec";
+import { Ollama, setDefaultOllama } from "src/core/llm";
 import { z } from "zod";
-import { setDefaultOllama, Ollama } from "src/core/llm";
 
 // =============================================================================
 // Mock Ollama
@@ -249,25 +249,26 @@ function seedTestData(db: Database): void {
 // We need to create a testable version of the MCP handlers
 // Since McpServer uses internal routing, we'll test the handler functions directly
 
+import type { RankedResult } from "src/core/store";
 import {
-  searchFTS,
-  searchVec,
+  createStore,
+  DEFAULT_EMBED_MODEL,
+  DEFAULT_MULTI_GET_MAX_BYTES,
+  DEFAULT_QUERY_MODEL,
+  DEFAULT_RERANK_MODEL,
   expandQuery,
-  rerank,
-  reciprocalRankFusion,
   extractSnippet,
-  getContextForFile,
   getCollectionIdByName,
+  getContextForFile,
   getDocument,
   getMultipleDocuments,
   getStatus,
-  DEFAULT_EMBED_MODEL,
-  DEFAULT_QUERY_MODEL,
-  DEFAULT_RERANK_MODEL,
-  DEFAULT_MULTI_GET_MAX_BYTES,
-  createStore,
+  reciprocalRankFusion,
+  rerank,
+  searchFTS,
+  searchVec,
 } from "src/core/store";
-import type { RankedResult } from "src/core/store";
+
 // Note: searchResultsToMcpCsv no longer used in MCP - using structuredContent instead
 
 // =============================================================================

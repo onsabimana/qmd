@@ -6,7 +6,7 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { ContextRepository, CollectionRepository, DocumentRepository, type PathContextRow } from "src/database";
+import { CollectionRepository, ContextRepository, DocumentRepository, type PathContextRow } from "src/database";
 
 export interface ContextInfo {
   collectionId: number;

@@ -18,11 +18,12 @@ export async function hashContent(content: string): Promise<string> {
  */
 export function extractTitle(content: string, filename: string): string {
   const match = content.match(/^##?\s+(.+)$/m);
-  if (match) {
-    const title = match[1].trim();
+  const title = match?.[1]?.trim();
+  if (title) {
     if (title === "📝 Notes" || title === "Notes") {
       const nextMatch = content.match(/^##\s+(.+)$/m);
-      if (nextMatch) return nextMatch[1].trim();
+      const nextTitle = nextMatch?.[1]?.trim();
+      if (nextTitle) return nextTitle;
     }
     return title;
   }

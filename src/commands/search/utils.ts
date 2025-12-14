@@ -53,10 +53,10 @@ export function reciprocalRankFusion(
   >();
 
   for (let listIdx = 0; listIdx < resultLists.length; listIdx++) {
-    const results = resultLists[listIdx];
+    const results = resultLists[listIdx]!;
     const weight = weights[listIdx] ?? 1.0;
     for (let rank = 0; rank < results.length; rank++) {
-      const doc = results[rank];
+      const doc = results[rank]!;
       const rrfScore = weight / (k + rank + 1);
       const existing = scores.get(doc.file);
       if (existing) {

@@ -7,8 +7,8 @@
 
 import type { Database } from "bun:sqlite";
 import { Glob } from "bun";
-import { CollectionRepository, DocumentRepository, type CollectionRow } from "src/database";
-import { hashContent, extractTitle } from "src/utils/content";
+import { CollectionRepository, type CollectionRow, DocumentRepository } from "src/database";
+import { extractTitle, hashContent } from "src/utils/content";
 import { getRealPath, resolve } from "src/utils/path";
 
 export interface CollectionWithStats extends CollectionRow {
@@ -29,6 +29,7 @@ export interface IndexingResult {
   unchanged: number;
   removed: number;
   orphanedContent: number;
+  skipped: number;
 }
 
 export class CollectionManager {
@@ -171,7 +172,7 @@ export class CollectionManager {
 
     const total = files.length;
     if (total === 0) {
-      return { indexed: 0, updated: 0, unchanged: 0, removed: 0, orphanedContent: 0 };
+      return { indexed: 0, updated: 0, unchanged: 0, removed: 0, orphanedContent: 0, skipped: 0 };
     }
 
     let indexed = 0,
@@ -180,13 +181,15 @@ export class CollectionManager {
     const seenPaths = new Set<string>();
 
     // Process each file
-    for (let i = 0; i < files.length; i++) {
-      const relativeFile = files[i];
+    let i = 0;
+    for (const relativeFile of files) {
+      // const relativeFile = files[i];
       const filepath = getRealPath(resolve(pwd, relativeFile));
       seenPaths.add(relativeFile);
 
       if (onProgress) {
         onProgress(i + 1, total, relativeFile);
+        i++;
       }
 
       // Read and hash content
@@ -246,7 +249,7 @@ export class CollectionManager {
     // Update collection timestamp
     this.collectionRepo.update(collection.id, { updated_at: now });
 
-    return { indexed, updated, unchanged, removed, orphanedContent };
+    return { indexed, updated, unchanged, removed, orphanedContent, skipped: 0 };
   }
 
   /**

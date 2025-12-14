@@ -6,13 +6,12 @@
  */
 
 import type { Database } from "bun:sqlite";
-import { VectorRepository, DocumentRepository, CollectionRepository } from "src/database";
-import { getLLM } from "src/core/llm";
-import { formatDocForEmbedding } from "src/core/llm";
 import { CHUNK_BYTE_SIZE } from "src/config";
+import { formatDocForEmbedding, getLLM } from "src/core/llm";
+import { CollectionRepository, DocumentRepository, VectorRepository } from "src/database";
+import type { EmbeddingOptions } from "./types";
 
-export interface EmbeddingOptions {
-  model: string;
+export interface EmbeddingOptionsWithCallback extends EmbeddingOptions {
   onProgress?: (current: number, total: number, hash: string) => void;
 }
 
@@ -49,7 +48,7 @@ export class VectorService {
   /**
    * Generate embeddings for documents
    */
-  async embedDocuments(options: EmbeddingOptions): Promise<EmbeddingResult> {
+  async embedDocuments(options: EmbeddingOptionsWithCallback): Promise<EmbeddingResult> {
     const { model, onProgress } = options;
     const llm = getLLM(this.db);
 
@@ -69,8 +68,7 @@ export class VectorService {
     let totalChunks = 0;
     let skipped = 0;
 
-    for (let i = 0; i < hashes.length; i++) {
-      const hash = hashes[i];
+    for (const [i, hash] of hashes.entries()) {
 
       if (onProgress) {
         onProgress(i + 1, totalHashes, hash);
@@ -85,14 +83,14 @@ export class VectorService {
 
       // Get a sample document for this hash to extract title
       const docs = this.documentRepo.findByHash(hash);
-      const title = docs.length > 0 ? docs[0].title : "";
+      const title = docs.length > 0 ? docs[0]!.title : "";
 
       // Chunk the document
       const chunks = this.chunkDocument(content.doc);
 
       // Generate embeddings for each chunk
       for (let seq = 0; seq < chunks.length; seq++) {
-        const chunk = chunks[seq];
+        const chunk = chunks[seq]!;
 
         // Format chunk for embedding
         const formatted = formatDocForEmbedding(chunk.text, title);

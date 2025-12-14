@@ -2,16 +2,17 @@
  * Maintenance and administrative commands
  */
 
-import { Database } from "bun:sqlite";
-import { withDb, withDbAsync, getDbPath } from "src/database/connection";
-import { extractTitle, chunkDocument } from "src/utils/content";
-import { VectorService } from "src/core/vectors";
 import { indexFiles } from "src/commands/collections";
-import { cleanupDuplicateCollections, updateDisplayPaths, computeDisplayPath } from "src/utils/database";
-import { formatBytes, formatTimeAgo, formatETA } from "src/utils/time";
+import { CHUNK_BYTE_SIZE, DEFAULT_EMBED_MODEL } from "src/config";
+import { VectorService } from "src/core/vectors";
+import { CacheRepository } from "src/database/cache";
+import { getDbPath, withDb, withDbAsync } from "src/database/connection";
+import { VectorRepository } from "src/database/vectors";
+import { chunkDocument, extractTitle } from "src/utils/content";
+import { cleanupDuplicateCollections, updateDisplayPaths } from "src/utils/database";
+import { logger } from "src/utils/logger";
 import { colors as c, cursor, progress, renderProgressBar } from "src/utils/terminal";
-import { CHUNK_BYTE_SIZE } from "src/config";
-import { DEFAULT_EMBED_MODEL } from "src/config";
+import { formatBytes, formatETA, formatTimeAgo } from "src/utils/time";
 
 /**
  * Show index status and collections
@@ -65,20 +66,21 @@ export function showStatus(): void {
       latest: string | null;
     };
 
-    console.log(`${c.bold}QMD Status${c.reset}\n`);
-    console.log(`Index: ${dbPath}`);
-    console.log(`Size:  ${formatBytes(indexSize)}\n`);
-
-    console.log(`${c.bold}Documents${c.reset}`);
-    console.log(`  Total:    ${totalDocs.count} files indexed`);
-    console.log(`  Vectors:  ${vectorCount.count} embedded`);
+    // Build status message
+    let statusMsg = `${c.bold}QMD Status${c.reset}\n`;
+    statusMsg += `Index: ${dbPath}\n`;
+    statusMsg += `Size:  ${formatBytes(indexSize)}\n\n`;
+    statusMsg += `${c.bold}Documents${c.reset}\n`;
+    statusMsg += `  Total:    ${totalDocs.count} files indexed\n`;
+    statusMsg += `  Vectors:  ${vectorCount.count} embedded\n`;
     if (needsEmbedding > 0) {
-      console.log(`  ${c.yellow}Pending:  ${needsEmbedding} need embedding${c.reset} (run 'qmd embed')`);
+      statusMsg += `  ${c.yellow}⚠${c.reset} Pending:  ${needsEmbedding} need embedding (run 'qmd embed')\n`;
     }
     if (mostRecent.latest) {
       const lastUpdate = new Date(mostRecent.latest);
-      console.log(`  Updated:  ${formatTimeAgo(lastUpdate)}`);
+      statusMsg += `  Updated:  ${formatTimeAgo(lastUpdate)}`;
     }
+    logger.info(statusMsg);
 
     // Get context counts per collection
     const contextCounts = db
@@ -91,36 +93,38 @@ export function showStatus(): void {
     const contextCountMap = new Map(contextCounts.map((c) => [c.collection_id, c.count]));
 
     if (collections.length > 0) {
-      console.log(`\n${c.bold}Collections${c.reset}`);
+      let collectionsMsg = `\n${c.bold}Collections${c.reset}\n`;
       for (const col of collections) {
         const lastMod = col.last_modified ? formatTimeAgo(new Date(col.last_modified)) : "never";
         const contextCount = contextCountMap.get(col.id) || 0;
 
-        console.log(`  ${c.cyan}${col.name}${c.reset} ${c.dim}(qmd://${col.name}/)${c.reset}`);
-        console.log(`    ${c.dim}Path:${c.reset}     ${col.pwd}`);
-        console.log(`    ${c.dim}Pattern:${c.reset}  ${col.glob_pattern}`);
-        console.log(`    ${c.dim}Files:${c.reset}    ${col.active_count} (updated ${lastMod})`);
+        collectionsMsg += `  ${c.cyan}${col.name}${c.reset} ${c.dim}(qmd://${col.name}/)${c.reset}\n`;
+        collectionsMsg += `    ${c.dim}Path:${c.reset}     ${col.pwd}\n`;
+        collectionsMsg += `    ${c.dim}Pattern:${c.reset}  ${col.glob_pattern}\n`;
+        collectionsMsg += `    ${c.dim}Files:${c.reset}    ${col.active_count} (updated ${lastMod})`;
         if (contextCount > 0) {
-          console.log(`    ${c.dim}Contexts:${c.reset} ${contextCount}`);
+          collectionsMsg += `\n    ${c.dim}Contexts:${c.reset} ${contextCount}`;
         }
+        collectionsMsg += "\n";
       }
 
       // Show examples of virtual paths
-      console.log(`\n${c.bold}Examples${c.reset}`);
-      console.log(`  ${c.dim}# List files in a collection${c.reset}`);
+      collectionsMsg += `\n${c.bold}Examples${c.reset}\n`;
+      collectionsMsg += `${c.dim}  # List files in a collection${c.reset}\n`;
       if (collections.length > 0) {
-        console.log(`  qmd ls ${collections[0].name}`);
+        collectionsMsg += `  qmd ls ${collections[0]!.name}\n`;
       }
-      console.log(`  ${c.dim}# Get a document${c.reset}`);
+      collectionsMsg += `${c.dim}  # Get a document${c.reset}\n`;
       if (collections.length > 0) {
-        console.log(`  qmd get qmd://${collections[0].name}/path/to/file.md`);
+        collectionsMsg += `  qmd get qmd://${collections[0]!.name}/path/to/file.md\n`;
       }
-      console.log(`  ${c.dim}# Search within a collection${c.reset}`);
+      collectionsMsg += `${c.dim}  # Search within a collection${c.reset}\n`;
       if (collections.length > 0) {
-        console.log(`  qmd search "query" -c ${collections[0].name}`);
+        collectionsMsg += `  qmd search "query" -c ${collections[0]!.name}`;
       }
+      logger.info(collectionsMsg);
     } else {
-      console.log(`\n${c.dim}No collections. Run 'qmd collection add .' to index markdown files.${c.reset}`);
+      logger.dim(`\nNo collections. Run 'qmd collection add .' to index markdown files.`);
     }
   });
 }
@@ -133,7 +137,8 @@ export async function updateCollections(): Promise<void> {
     cleanupDuplicateCollections(db);
 
     // Clear Ollama cache on update
-    clearCache(db);
+    const cacheRepo = new CacheRepository(db);
+    cacheRepo.clear();
 
     const collections = db.prepare(`SELECT id, pwd, glob_pattern FROM collections`).all() as {
       id: number;
@@ -142,32 +147,31 @@ export async function updateCollections(): Promise<void> {
     }[];
 
     if (collections.length === 0) {
-      console.log(`${c.dim}No collections found. Run 'qmd add .' to index markdown files.${c.reset}`);
+      logger.dim(`No collections found. Run 'qmd add .' to index markdown files.`);
       return;
     }
 
     // Update display_paths for any documents missing them (migration)
     const pathsUpdated = updateDisplayPaths(db);
     if (pathsUpdated > 0) {
-      console.log(`${c.green}✓${c.reset} Updated ${pathsUpdated} display paths`);
+      logger.success(`Updated ${pathsUpdated} display paths`);
     }
 
     // Don't close db here - indexFiles will reuse it and close at the end
-    console.log(`${c.bold}Updating ${collections.length} collection(s)...${c.reset}\n`);
+    logger.info(`${c.bold}Updating ${collections.length} collection(s)...${c.reset}\n`);
 
-    for (let i = 0; i < collections.length; i++) {
-      const col = collections[i];
-      console.log(`${c.cyan}[${i + 1}/${collections.length}]${c.reset} ${c.bold}${col.pwd}${c.reset}`);
-      console.log(`${c.dim}    Pattern: ${col.glob_pattern}${c.reset}`);
+    for (const [i, col] of collections.entries()) {
+      logger.info(`${c.cyan}[${i + 1}/${collections.length}]${c.reset} ${c.bold}${col.pwd}${c.reset}`);
+      logger.dim(`    Pattern: ${col.glob_pattern}`);
       // Temporarily set PWD for indexing
       const originalPwd = process.env.PWD;
       process.env.PWD = col.pwd;
       await indexFiles(col.glob_pattern);
       process.env.PWD = originalPwd;
-      console.log("");
+      logger.info("");
     }
 
-    console.log(`${c.green}✓ All collections updated.${c.reset}`);
+    logger.success(`All collections updated.`);
   });
 }
 
@@ -184,7 +188,7 @@ export async function vectorIndex(
 
     // If force, clear all vectors
     if (force) {
-      console.log(`${c.yellow}Force re-indexing: clearing all vectors...${c.reset}`);
+      logger.warn(`Force re-indexing: clearing all vectors...`);
       db.run(`DELETE FROM content_vectors`);
       db.run(`DROP TABLE IF EXISTS vectors_vec`);
     }
@@ -203,7 +207,7 @@ export async function vectorIndex(
       .all() as { hash: string; body: string; path: string }[];
 
     if (hashesToEmbed.length === 0) {
-      console.log(`${c.green}✓ All content hashes already have embeddings.${c.reset}`);
+      logger.success(`All content hashes already have embeddings.`);
       return;
     }
 
@@ -235,17 +239,17 @@ export async function vectorIndex(
         allChunks.push({
           hash: item.hash,
           title,
-          text: chunks[seq].text,
+          text: chunks[seq]!.text,
           seq,
-          pos: chunks[seq].pos,
-          bytes: encoder.encode(chunks[seq].text).length,
+          pos: chunks[seq]!.pos,
+          bytes: encoder.encode(chunks[seq]!.text).length,
           displayName,
         });
       }
     }
 
     if (allChunks.length === 0) {
-      console.log(`${c.green}✓ No non-empty documents to embed.${c.reset}`);
+      logger.success(`No non-empty documents to embed.`);
       return;
     }
 
@@ -253,21 +257,22 @@ export async function vectorIndex(
     const totalChunks = allChunks.length;
     const totalDocs = hashesToEmbed.length;
 
-    console.log(
+    logger.info(
       `${c.bold}Embedding ${totalDocs} documents${c.reset} ${c.dim}(${totalChunks} chunks, ${formatBytes(totalBytes)})${c.reset}`,
     );
     if (multiChunkDocs > 0) {
-      console.log(`${c.dim}${multiChunkDocs} documents split into multiple chunks${c.reset}`);
+      logger.dim(`${multiChunkDocs} documents split into multiple chunks`);
     }
-    console.log(`${c.dim}Model: ${model}${c.reset}\n`);
+    logger.dim(`Model: ${model}\n`);
 
     // Hide cursor during embedding
     cursor.hide();
 
     // Get embedding dimensions from first chunk
     progress.indeterminate();
-    const firstEmbedding = await getEmbeddingFn(allChunks[0].text, model, false, allChunks[0].title);
-    ensureVecTable(db, firstEmbedding.length);
+    const firstEmbedding = await getEmbeddingFn(allChunks[0]!.text, model, false, allChunks[0]!.title);
+    const vecRepo = new VectorRepository(db);
+    vecRepo.ensureVecTable(firstEmbedding.length);
 
     const insertVecStmt = db.prepare(`INSERT OR REPLACE INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`);
     const insertContentVectorStmt = db.prepare(
@@ -280,14 +285,13 @@ export async function vectorIndex(
     const startTime = Date.now();
 
     // Insert first chunk
-    const firstHashSeq = `${allChunks[0].hash}_${allChunks[0].seq}`;
+    const firstHashSeq = `${allChunks[0]!.hash}_${allChunks[0]!.seq}`;
     insertVecStmt.run(firstHashSeq, new Float32Array(firstEmbedding));
-    insertContentVectorStmt.run(allChunks[0].hash, allChunks[0].seq, allChunks[0].pos, model, now);
+    insertContentVectorStmt.run(allChunks[0]!.hash, allChunks[0]!.seq, allChunks[0]!.pos, model, now);
     chunksEmbedded++;
-    bytesProcessed += allChunks[0].bytes;
+    bytesProcessed += allChunks[0]!.bytes;
 
-    for (let i = 1; i < allChunks.length; i++) {
-      const chunk = allChunks[i];
+    for (const chunk of allChunks.slice(1)) {
       try {
         const embedding = await getEmbeddingFn(chunk.text, model, false, chunk.title);
         const hashSeq = `${chunk.hash}_${chunk.seq}`;
@@ -299,7 +303,7 @@ export async function vectorIndex(
         errors++;
         bytesProcessed += chunk.bytes;
         progress.error();
-        console.error(`\n${c.yellow}⚠ Error embedding "${chunk.displayName}" chunk ${chunk.seq}: ${err}${c.reset}`);
+        logger.error(`Error embedding "${chunk.displayName}" chunk ${chunk.seq}: ${err}`);
       }
 
       const percent = (bytesProcessed / totalBytes) * 100;
@@ -326,14 +330,14 @@ export async function vectorIndex(
     const totalTimeSec = (Date.now() - startTime) / 1000;
     const avgThroughput = formatBytes(totalBytes / totalTimeSec);
 
-    console.log(
+    logger.info(
       `\r${c.green}${renderProgressBar(100)}${c.reset} ${c.bold}100%${c.reset}                                    `,
     );
-    console.log(
-      `\n${c.green}✓ Done!${c.reset} Embedded ${c.bold}${chunksEmbedded}${c.reset} chunks from ${c.bold}${totalDocs}${c.reset} documents in ${c.bold}${formatETA(totalTimeSec)}${c.reset} ${c.dim}(${avgThroughput}/s)${c.reset}`,
+    logger.success(
+      `Done! Embedded ${c.bold}${chunksEmbedded}${c.reset} chunks from ${c.bold}${totalDocs}${c.reset} documents in ${c.bold}${formatETA(totalTimeSec)}${c.reset} ${c.dim}(${avgThroughput}/s)${c.reset}`,
     );
     if (errors > 0) {
-      console.log(`${c.yellow}⚠ ${errors} chunks failed${c.reset}`);
+      logger.warn(`${errors} chunks failed`);
     }
   });
 }
@@ -346,7 +350,7 @@ export function cleanup(): void {
     // 1. Clear ollama_cache
     const cacheCount = db.prepare(`SELECT COUNT(*) as c FROM ollama_cache`).get() as { c: number };
     db.run(`DELETE FROM ollama_cache`);
-    console.log(`${c.green}✓${c.reset} Cleared ${cacheCount.c} cached API responses`);
+    logger.success(`Cleared ${cacheCount.c} cached API responses`);
 
     // 2. Remove orphaned vectors (no active document with that hash)
     const orphanedVecs = db
@@ -372,20 +376,20 @@ export function cleanup(): void {
             SELECT hash FROM documents WHERE active = 1
           )
         `);
-      console.log(`${c.green}✓${c.reset} Removed ${orphanedVecs.c} orphaned embedding chunks`);
+      logger.success(`Removed ${orphanedVecs.c} orphaned embedding chunks`);
     } else {
-      console.log(`${c.dim}No orphaned embeddings to remove${c.reset}`);
+      logger.dim(`No orphaned embeddings to remove`);
     }
 
     // 3. Count inactive documents
     const inactiveDocs = db.prepare(`SELECT COUNT(*) as c FROM documents WHERE active = 0`).get() as { c: number };
     if (inactiveDocs.c > 0) {
       db.run(`DELETE FROM documents WHERE active = 0`);
-      console.log(`${c.green}✓${c.reset} Removed ${inactiveDocs.c} inactive document records`);
+      logger.success(`Removed ${inactiveDocs.c} inactive document records`);
     }
 
     // 4. Vacuum to reclaim space
     db.run(`VACUUM`);
-    console.log(`${c.green}✓${c.reset} Database vacuumed`);
+    logger.success(`Database vacuumed`);
   });
 }

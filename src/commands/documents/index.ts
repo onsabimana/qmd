@@ -2,4 +2,4 @@
  * Document retrieval commands
  */
 
-export { getDocument, multiGet, listFiles } from "./documents";
+export { getDocument, listFiles, multiGet } from "./documents";

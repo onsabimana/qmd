@@ -6,16 +6,16 @@
  * Tests use a mock HTTP server to simulate Ollama responses.
  */
 
-import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import {
-  Ollama,
-  getDefaultOllama,
-  setDefaultOllama,
-  formatQueryForEmbedding,
-  formatDocForEmbedding,
   type EmbeddingResult,
+  formatDocForEmbedding,
+  formatQueryForEmbedding,
   type GenerateResult,
+  getDefaultOllama,
+  Ollama,
   type RerankDocumentResult,
+  setDefaultOllama,
   type TokenLogProb,
 } from "src/core/llm";
 

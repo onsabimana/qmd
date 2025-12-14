@@ -5,21 +5,22 @@
  * All raw fetch calls to LLM APIs should go through this module.
  */
 
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { CacheRepository } from "src/database/cache";
+import { logger } from "src/utils/logger";
 import type {
-  TokenLogProb,
   EmbeddingResult,
-  GenerateResult,
-  RerankDocumentResult,
-  RerankResult,
-  ModelInfo,
   EmbedOptions,
   GenerateOptions,
-  RerankOptions,
-  RerankDocument,
+  GenerateResult,
   LLM,
+  ModelInfo,
   OllamaConfig,
+  RerankDocument,
+  RerankDocumentResult,
+  RerankOptions,
+  RerankResult,
+  TokenLogProb,
 } from "./types";
 
 // Re-export types for backward compatibility
@@ -42,7 +43,7 @@ export type {
 // Document formatting utilities
 // =============================================================================
 
-import { DEFAULT_OLLAMA_URL, DEFAULT_EMBED_MODEL, DEFAULT_GENERATE_MODEL, DEFAULT_RERANK_MODEL } from "src/config";
+import { DEFAULT_EMBED_MODEL, DEFAULT_GENERATE_MODEL, DEFAULT_OLLAMA_URL, DEFAULT_RERANK_MODEL } from "src/config";
 
 /**
  * Format text for embedding query
@@ -170,10 +171,12 @@ export class Ollama implements LLM {
 
         let logprobs: TokenLogProb[] | undefined;
         if (data.logprobs?.tokens && data.logprobs?.token_logprobs) {
-          logprobs = data.logprobs.tokens.map((token, i) => ({
-            token,
-            logprob: data.logprobs!.token_logprobs![i],
-          }));
+          logprobs = data.logprobs.tokens
+            .map((token, i) => ({
+              token,
+              logprob: data.logprobs!.token_logprobs![i],
+            }))
+            .filter((lp): lp is TokenLogProb => lp.logprob !== undefined);
         }
 
         return {
@@ -210,10 +213,12 @@ export class Ollama implements LLM {
       // Parse logprobs if present
       let logprobs: TokenLogProb[] | undefined;
       if (data.logprobs?.tokens && data.logprobs?.token_logprobs) {
-        logprobs = data.logprobs.tokens.map((token, i) => ({
-          token,
-          logprob: data.logprobs!.token_logprobs![i],
-        }));
+        logprobs = data.logprobs.tokens
+          .map((token, i) => ({
+            token,
+            logprob: data.logprobs!.token_logprobs![i],
+          }))
+          .filter((lp): lp is TokenLogProb => lp.logprob !== undefined);
       }
 
       return {
@@ -472,7 +477,7 @@ export async function ensureModelAvailable(model: string, onProgress?: (percent:
 
   if (info.exists) return;
 
-  console.log(`Model ${model} not found. Pulling...`);
+  logger.info(`Model ${model} not found. Pulling...`);
   if (onProgress) onProgress(-1); // Indeterminate
 
   const success = await llm.pullModel(model, onProgress);
@@ -483,5 +488,5 @@ export async function ensureModelAvailable(model: string, onProgress?: (percent:
   }
 
   if (onProgress) onProgress(100);
-  console.log(`Model ${model} pulled successfully.`);
+  logger.success(`Model ${model} pulled successfully`);
 }

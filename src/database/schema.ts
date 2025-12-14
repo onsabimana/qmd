@@ -5,6 +5,7 @@
  */
 
 import type { Database } from "bun:sqlite";
+import { logger } from "src/utils/logger";
 
 /**
  * Initialize all database tables and triggers
@@ -146,7 +147,7 @@ export function initializeSchema(db: Database): void {
  * Migrate database from old schema to content-addressable schema
  */
 function migrateToContentAddressable(db: Database): void {
-  console.log("Migrating database to content-addressable schema...");
+  logger.info("Migrating database to content-addressable schema...");
 
   db.run("BEGIN TRANSACTION");
 
@@ -209,8 +210,9 @@ function migrateToContentAddressable(db: Database): void {
       )
     `);
 
-    // Migrate data
-    console.log("Migrating content...");
+    // Build progress message
+    let progress = "Migrating content...";
+    logger.info(progress);
     db.run(`
       INSERT INTO content (hash, doc, created_at)
       SELECT hash, body, MIN(created_at) as created_at
@@ -219,7 +221,7 @@ function migrateToContentAddressable(db: Database): void {
       GROUP BY hash
     `);
 
-    console.log("Migrating collections...");
+    logger.info("Migrating collections...");
     db.run(`
       INSERT INTO collections (id, name, pwd, glob_pattern, created_at, updated_at)
       SELECT id, pwd as name, pwd, glob_pattern, created_at, created_at as updated_at
@@ -242,13 +244,13 @@ function migrateToContentAddressable(db: Database): void {
       const rows = db.prepare(`SELECT id FROM collections WHERE name = ? ORDER BY id`).all(dup.name) as {
         id: number;
       }[];
-      for (let i = 1; i < rows.length; i++) {
-        db.prepare(`UPDATE collections SET name = ? WHERE id = ?`).run(`${dup.name}-${rows[i].id}`, rows[i].id);
+      for (const row of rows.slice(1)) {
+        db.prepare(`UPDATE collections SET name = ? WHERE id = ?`).run(`${dup.name}-${row.id}`, row.id);
       }
     }
 
     // Migrate documents
-    console.log("Migrating documents...");
+    logger.info("Migrating documents...");
     const oldDocs = db
       .prepare(
         `SELECT d.id, d.collection_id, d.filepath, d.title, d.hash, d.created_at, d.modified_at, c.pwd
@@ -284,12 +286,12 @@ function migrateToContentAddressable(db: Database): void {
       try {
         insertDoc.run(doc.collection_id, path, doc.title, doc.hash, doc.created_at, doc.modified_at);
       } catch (e) {
-        console.warn(`Skipping duplicate path: ${path} in collection ${doc.collection_id}`);
+        logger.warn(`Skipping duplicate path: ${path} in collection ${doc.collection_id}`);
       }
     }
 
     // Migrate path contexts
-    console.log("Migrating path contexts...");
+    logger.info("Migrating path contexts...");
     const oldContexts = db.prepare(`SELECT * FROM path_contexts_old`).all() as Array<{
       path_prefix: string;
       context: string;
@@ -361,7 +363,7 @@ function migrateToContentAddressable(db: Database): void {
     `);
 
     // Populate FTS from migrated data
-    console.log("Rebuilding full-text search index...");
+    logger.info("Rebuilding full-text search index...");
     db.run(`
       INSERT INTO documents_fts(rowid, path, body)
       SELECT d.id, d.path, c.doc
@@ -377,10 +379,10 @@ function migrateToContentAddressable(db: Database): void {
     db.run(`CREATE INDEX idx_path_contexts_collection ON path_contexts(collection_id, path_prefix)`);
 
     db.run("COMMIT");
-    console.log("Migration complete!");
+    logger.success("Migration complete!");
   } catch (e) {
     db.run("ROLLBACK");
-    console.error("Migration failed:", e);
+    logger.error(`Migration failed: ${e}`);
     throw e;
   }
 }

@@ -4,8 +4,8 @@
  */
 
 export {
-  reciprocalRankFusion,
-  normalizeScores,
-  normalizeBM25,
   extractSnippetWithContext,
+  normalizeBM25,
+  normalizeScores,
+  reciprocalRankFusion,
 } from "src/commands/search/utils";

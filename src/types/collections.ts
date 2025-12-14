@@ -35,12 +35,7 @@ export type IndexHealthInfo = {
 /**
  * Virtual path components (qmd://collection/path)
  */
-export type VirtualPath =
-  | {
-      collectionName: string;
-      path: string; // relative path within collection
-    }
-  | {
-      type: "filesystem";
-      path: string;
-    };
+export type VirtualPath = {
+  collectionName: string;
+  path: string; // relative path within collection
+};

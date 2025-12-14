@@ -31,7 +31,7 @@ export function getDefaultDbPath(indexName: string = "index"): string {
  * Resolve path segments into an absolute path
  */
 export function resolve(...paths: string[]): string {
-  let result = paths[0].startsWith("/") ? "" : Bun.env.PWD || process.cwd();
+  let result = paths[0]!.startsWith("/") ? "" : (Bun.env.PWD ?? process.cwd());
   for (const p of paths) {
     if (p.startsWith("/")) {
       result = p;

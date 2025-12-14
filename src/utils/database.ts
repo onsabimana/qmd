@@ -2,9 +2,11 @@
  * Database helper utilities
  */
 
-import { Database } from "bun:sqlite";
-import { getRealPath } from "./path";
+import { Glob } from "bun";
+import type { Database } from "bun:sqlite";
 import { VectorService } from "src/core/vectors";
+import { logger } from "./logger";
+import { getRealPath } from "./path";
 
 export interface IndexHealthInfo {
   needsEmbedding: number;
@@ -127,21 +129,17 @@ export function checkIndexHealth(db: Database): void {
   if (needsEmbedding > 0) {
     const pct = Math.round((needsEmbedding / totalDocs) * 100);
     if (pct >= 10) {
-      process.stderr.write(
-        `${c.yellow}Warning: ${needsEmbedding} documents (${pct}%) need embeddings. Run 'qmd embed' for better results.${c.reset}\n`,
+      logger.warn(
+        `${needsEmbedding} documents (${pct}%) need embeddings. Run 'qmd embed' for better results.`,
       );
     } else {
-      process.stderr.write(
-        `${c.dim}Tip: ${needsEmbedding} documents need embeddings. Run 'qmd embed' to index them.${c.reset}\n`,
-      );
+      logger.dim(`Tip: ${needsEmbedding} documents need embeddings. Run 'qmd embed' to index them.`);
     }
   }
 
   // Check if most recent document update is older than 2 weeks
   if (daysStale !== null && daysStale >= 14) {
-    process.stderr.write(
-      `${c.dim}Tip: Index last updated ${daysStale} days ago. Run 'qmd update' to refresh.${c.reset}\n`,
-    );
+    logger.dim(`Tip: Index last updated ${daysStale} days ago. Run 'qmd update' to refresh.`);
   }
 }
 
@@ -261,4 +259,40 @@ export function detectCollectionFromPath(
     collectionName: collections.name,
     relativePath,
   };
+}
+
+/**
+ * Match files by glob pattern across all collections
+ */
+export function matchFilesByGlob(
+  db: Database,
+  pattern: string,
+): { filepath: string; displayPath: string; bodyLength: number }[] {
+  const allFiles = db
+    .prepare(`
+    SELECT
+      'qmd://' || c.name || '/' || d.path as virtual_path,
+      LENGTH(content.doc) as body_length,
+      d.collection_id,
+      d.path
+    FROM documents d
+    JOIN collections c ON c.id = d.collection_id
+    JOIN content ON content.hash = d.hash
+    WHERE d.active = 1
+  `)
+    .all() as {
+    virtual_path: string;
+    body_length: number;
+    collection_id: number;
+    path: string;
+  }[];
+
+  const glob = new Glob(pattern);
+  return allFiles
+    .filter((f) => glob.match(f.virtual_path) || glob.match(f.path))
+    .map((f) => ({
+      filepath: f.virtual_path, // Use virtual path as filepath
+      displayPath: f.virtual_path,
+      bodyLength: f.body_length,
+    }));
 }
