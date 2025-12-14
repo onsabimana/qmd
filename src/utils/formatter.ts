@@ -5,23 +5,17 @@
  * JSON, CSV, XML, Markdown, files list, and CLI (colored terminal output).
  */
 
-import { extractSnippet } from "./store.js";
-import type { SearchResult, MultiGetFile, MultiGetResult, DocumentResult } from "./store.js";
+import { extractSnippet } from "./text";
+import type { SearchResult, OutputFormat, FormatOptions } from "src/commands/search/types";
+import type { MultiGetFile, MultiGetResult, DocumentResult } from "src/types";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-// Re-export store types for convenience
-export type { SearchResult, MultiGetFile, MultiGetResult, DocumentResult };
+// Types are now centralized in src/types/ and imported above
 
-export type OutputFormat = "cli" | "csv" | "md" | "xml" | "files" | "json";
-
-export type FormatOptions = {
-  full?: boolean;       // Show full document content instead of snippet
-  query?: string;       // Query for snippet extraction and highlighting
-  useColor?: boolean;   // Enable terminal colors (default: false for non-CLI)
-};
+export type { SearchResult, MultiGetFile, MultiGetResult, DocumentResult, OutputFormat, FormatOptions };
 
 // =============================================================================
 // Escape Helpers
@@ -52,17 +46,17 @@ export function escapeXml(str: string): string {
 /**
  * Format search results as JSON
  */
-export function searchResultsToJson(
-  results: SearchResult[],
-  opts: FormatOptions = {}
-): string {
-  const output = results.map(row => ({
+export function searchResultsToJson(results: SearchResult[], opts: FormatOptions = {}): string {
+  const output = results.map((row) => ({
     score: Math.round(row.score * 100) / 100,
     file: row.displayPath,
     title: row.title,
     ...(row.context && { context: row.context }),
     ...(opts.full && { body: row.body }),
-    ...(!opts.full && opts.query && { snippet: extractSnippet(row.body, opts.query, 300, row.chunkPos).snippet }),
+    ...(!opts.full &&
+      opts.query && {
+        snippet: extractSnippet(row.body, opts.query, 300, row.chunkPos).snippet,
+      }),
   }));
   return JSON.stringify(output, null, 2);
 }
@@ -70,13 +64,10 @@ export function searchResultsToJson(
 /**
  * Format search results as CSV
  */
-export function searchResultsToCsv(
-  results: SearchResult[],
-  opts: FormatOptions = {}
-): string {
+export function searchResultsToCsv(results: SearchResult[], opts: FormatOptions = {}): string {
   const query = opts.query || "";
   const header = "score,file,title,context,line,snippet";
-  const rows = results.map(row => {
+  const rows = results.map((row) => {
     const { line, snippet } = extractSnippet(row.body, query, 500, row.chunkPos);
     const content = opts.full ? row.body : snippet;
     return [
@@ -95,40 +86,38 @@ export function searchResultsToCsv(
  * Format search results as simple files list (score,filepath,context)
  */
 export function searchResultsToFiles(results: SearchResult[]): string {
-  return results.map(row => {
-    const ctx = row.context ? `,"${row.context.replace(/"/g, '""')}"` : "";
-    return `${row.score.toFixed(2)},${row.displayPath}${ctx}`;
-  }).join("\n");
+  return results
+    .map((row) => {
+      const ctx = row.context ? `,"${row.context.replace(/"/g, '""')}"` : "";
+      return `${row.score.toFixed(2)},${row.displayPath}${ctx}`;
+    })
+    .join("\n");
 }
 
 /**
  * Format search results as Markdown
  */
-export function searchResultsToMarkdown(
-  results: SearchResult[],
-  opts: FormatOptions = {}
-): string {
+export function searchResultsToMarkdown(results: SearchResult[], opts: FormatOptions = {}): string {
   const query = opts.query || "";
-  return results.map(row => {
-    const heading = row.title || row.displayPath;
-    if (opts.full) {
-      return `---\n# ${heading}\n\n${row.body}\n`;
-    } else {
-      const { snippet } = extractSnippet(row.body, query, 500, row.chunkPos);
-      return `---\n# ${heading}\n\n${snippet}\n`;
-    }
-  }).join("\n");
+  return results
+    .map((row) => {
+      const heading = row.title || row.displayPath;
+      if (opts.full) {
+        return `---\n# ${heading}\n\n${row.body}\n`;
+      } else {
+        const { snippet } = extractSnippet(row.body, query, 500, row.chunkPos);
+        return `---\n# ${heading}\n\n${snippet}\n`;
+      }
+    })
+    .join("\n");
 }
 
 /**
  * Format search results as XML
  */
-export function searchResultsToXml(
-  results: SearchResult[],
-  opts: FormatOptions = {}
-): string {
+export function searchResultsToXml(results: SearchResult[], opts: FormatOptions = {}): string {
   const query = opts.query || "";
-  const items = results.map(row => {
+  const items = results.map((row) => {
     const titleAttr = row.title ? ` title="${escapeXml(row.title)}"` : "";
     const content = opts.full ? row.body : extractSnippet(row.body, query, 500, row.chunkPos).snippet;
     return `<file name="${escapeXml(row.displayPath)}"${titleAttr}>\n${escapeXml(content)}\n</file>`;
@@ -140,12 +129,16 @@ export function searchResultsToXml(
  * Format search results for MCP (simpler CSV format with pre-extracted snippets)
  */
 export function searchResultsToMcpCsv(
-  results: { file: string; title: string; score: number; context: string | null; snippet: string }[]
+  results: {
+    file: string;
+    title: string;
+    score: number;
+    context: string | null;
+    snippet: string;
+  }[],
 ): string {
   const header = "file,title,score,context,snippet";
-  const rows = results.map(r =>
-    [r.file, r.title, r.score, r.context || "", r.snippet].map(escapeCSV).join(",")
-  );
+  const rows = results.map((r) => [r.file, r.title, r.score, r.context || "", r.snippet].map(escapeCSV).join(","));
   return [header, ...rows].join("\n");
 }
 
@@ -157,7 +150,7 @@ export function searchResultsToMcpCsv(
  * Format documents as JSON
  */
 export function documentsToJson(results: MultiGetFile[]): string {
-  const output = results.map(r => ({
+  const output = results.map((r) => ({
     file: r.displayPath,
     title: r.title,
     ...(r.context && { context: r.context }),
@@ -171,14 +164,10 @@ export function documentsToJson(results: MultiGetFile[]): string {
  */
 export function documentsToCsv(results: MultiGetFile[]): string {
   const header = "file,title,context,skipped,body";
-  const rows = results.map(r =>
-    [
-      r.displayPath,
-      r.title,
-      r.context || "",
-      r.skipped ? "true" : "false",
-      r.skipped ? (r.skipReason || "") : r.body
-    ].map(escapeCSV).join(",")
+  const rows = results.map((r) =>
+    [r.displayPath, r.title, r.context || "", r.skipped ? "true" : "false", r.skipped ? r.skipReason || "" : r.body]
+      .map(escapeCSV)
+      .join(","),
   );
   return [header, ...rows].join("\n");
 }
@@ -187,35 +176,39 @@ export function documentsToCsv(results: MultiGetFile[]): string {
  * Format documents as files list
  */
 export function documentsToFiles(results: MultiGetFile[]): string {
-  return results.map(r => {
-    const ctx = r.context ? `,"${r.context.replace(/"/g, '""')}"` : "";
-    const status = r.skipped ? ",[SKIPPED]" : "";
-    return `${r.displayPath}${ctx}${status}`;
-  }).join("\n");
+  return results
+    .map((r) => {
+      const ctx = r.context ? `,"${r.context.replace(/"/g, '""')}"` : "";
+      const status = r.skipped ? ",[SKIPPED]" : "";
+      return `${r.displayPath}${ctx}${status}`;
+    })
+    .join("\n");
 }
 
 /**
  * Format documents as Markdown
  */
 export function documentsToMarkdown(results: MultiGetFile[]): string {
-  return results.map(r => {
-    let md = `## ${r.displayPath}\n\n`;
-    if (r.title && r.title !== r.displayPath) md += `**Title:** ${r.title}\n\n`;
-    if (r.context) md += `**Context:** ${r.context}\n\n`;
-    if (r.skipped) {
-      md += `> ${r.skipReason}\n`;
-    } else {
-      md += "```\n" + r.body + "\n```\n";
-    }
-    return md;
-  }).join("\n");
+  return results
+    .map((r) => {
+      let md = `## ${r.displayPath}\n\n`;
+      if (r.title && r.title !== r.displayPath) md += `**Title:** ${r.title}\n\n`;
+      if (r.context) md += `**Context:** ${r.context}\n\n`;
+      if (r.skipped) {
+        md += `> ${r.skipReason}\n`;
+      } else {
+        md += "```\n" + r.body + "\n```\n";
+      }
+      return md;
+    })
+    .join("\n");
 }
 
 /**
  * Format documents as XML
  */
 export function documentsToXml(results: MultiGetFile[]): string {
-  const items = results.map(r => {
+  const items = results.map((r) => {
     let xml = "  <document>\n";
     xml += `    <file>${escapeXml(r.displayPath)}</file>\n`;
     xml += `    <title>${escapeXml(r.title)}</title>\n`;
@@ -240,15 +233,19 @@ export function documentsToXml(results: MultiGetFile[]): string {
  * Format a single DocumentResult as JSON
  */
 export function documentToJson(doc: DocumentResult): string {
-  return JSON.stringify({
-    file: doc.displayPath,
-    title: doc.title,
-    ...(doc.context && { context: doc.context }),
-    hash: doc.hash,
-    modifiedAt: doc.modifiedAt,
-    bodyLength: doc.bodyLength,
-    ...(doc.body !== undefined && { body: doc.body }),
-  }, null, 2);
+  return JSON.stringify(
+    {
+      file: doc.displayPath,
+      title: doc.title,
+      ...(doc.context && { context: doc.context }),
+      hash: doc.hash,
+      modifiedAt: doc.modifiedAt,
+      bodyLength: doc.bodyLength,
+      ...(doc.body !== undefined && { body: doc.body }),
+    },
+    null,
+    2,
+  );
 }
 
 /**
@@ -307,11 +304,7 @@ export function formatDocument(doc: DocumentResult, format: OutputFormat): strin
 /**
  * Format search results to the specified output format
  */
-export function formatSearchResults(
-  results: SearchResult[],
-  format: OutputFormat,
-  opts: FormatOptions = {}
-): string {
+export function formatSearchResults(results: SearchResult[], format: OutputFormat, opts: FormatOptions = {}): string {
   switch (format) {
     case "json":
       return searchResultsToJson(results, opts);
@@ -335,10 +328,7 @@ export function formatSearchResults(
 /**
  * Format documents to the specified output format
  */
-export function formatDocuments(
-  results: MultiGetFile[],
-  format: OutputFormat
-): string {
+export function formatDocuments(results: MultiGetFile[], format: OutputFormat): string {
   switch (format) {
     case "json":
       return documentsToJson(results);

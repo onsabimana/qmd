@@ -5,169 +5,44 @@
  * All raw fetch calls to LLM APIs should go through this module.
  */
 
-// =============================================================================
-// Types
-// =============================================================================
+import { Database } from "bun:sqlite";
+import { CacheRepository } from "src/database/cache";
+import type {
+  TokenLogProb,
+  EmbeddingResult,
+  GenerateResult,
+  RerankDocumentResult,
+  RerankResult,
+  ModelInfo,
+  EmbedOptions,
+  GenerateOptions,
+  RerankOptions,
+  RerankDocument,
+  LLM,
+  OllamaConfig,
+} from "./types";
 
-/**
- * Token with log probability
- */
-export type TokenLogProb = {
-  token: string;
-  logprob: number;
-};
-
-/**
- * Embedding result
- */
-export type EmbeddingResult = {
-  embedding: number[];
-  model: string;
-};
-
-/**
- * Generation result with optional logprobs
- */
-export type GenerateResult = {
-  text: string;
-  model: string;
-  logprobs?: TokenLogProb[];
-  done: boolean;
-};
-
-/**
- * Rerank result for a single document
- */
-export type RerankDocumentResult = {
-  file: string;
-  relevant: boolean;
-  confidence: number;
-  score: number;
-  rawToken: string;
-  logprob: number;
-};
-
-/**
- * Batch rerank result
- */
-export type RerankResult = {
-  results: RerankDocumentResult[];
-  model: string;
-};
-
-/**
- * Model info
- */
-export type ModelInfo = {
-  name: string;
-  exists: boolean;
-  size?: number;
-  modifiedAt?: string;
-};
-
-/**
- * Options for embedding
- */
-export type EmbedOptions = {
-  model: string;
-  isQuery?: boolean;
-  title?: string;
-};
-
-/**
- * Options for text generation
- */
-export type GenerateOptions = {
-  model: string;
-  maxTokens?: number;
-  temperature?: number;
-  logprobs?: boolean;
-  raw?: boolean;
-  stop?: string[];
-};
-
-/**
- * Options for reranking
- */
-export type RerankOptions = {
-  model: string;
-  batchSize?: number;
-};
-
-/**
- * Document to rerank
- */
-export type RerankDocument = {
-  file: string;
-  text: string;
-  title?: string;
+// Re-export types for backward compatibility
+export type {
+  TokenLogProb,
+  EmbeddingResult,
+  GenerateResult,
+  RerankDocumentResult,
+  RerankResult,
+  ModelInfo,
+  EmbedOptions,
+  GenerateOptions,
+  RerankOptions,
+  RerankDocument,
+  LLM,
+  OllamaConfig,
 };
 
 // =============================================================================
-// LLM Interface
+// Document formatting utilities
 // =============================================================================
 
-/**
- * Abstract LLM interface - implement this for different backends
- */
-export interface LLM {
-  /**
-   * Get embeddings for text
-   */
-  embed(text: string, options: EmbedOptions): Promise<EmbeddingResult | null>;
-
-  /**
-   * Generate text completion
-   */
-  generate(prompt: string, options: GenerateOptions): Promise<GenerateResult | null>;
-
-  /**
-   * Check if a model exists
-   */
-  modelExists(model: string): Promise<ModelInfo>;
-
-  /**
-   * Pull a model (download if not available)
-   */
-  pullModel(model: string, onProgress?: (progress: number) => void): Promise<boolean>;
-
-  // ==========================================================================
-  // High-level abstractions
-  // ==========================================================================
-
-  /**
-   * Expand a search query into multiple variations
-   */
-  expandQuery(query: string, model: string, numVariations?: number): Promise<string[]>;
-
-  /**
-   * Rerank documents by relevance to a query
-   * Returns list of documents with relevance scores and boolean judgments
-   */
-  rerank(query: string, documents: RerankDocument[], options: RerankOptions): Promise<RerankResult>;
-
-  /**
-   * Quick relevance check - returns just boolean judgments with logprobs
-   * More efficient than full rerank when you just need yes/no
-   */
-  rerankerLogprobsCheck(query: string, documents: RerankDocument[], options: RerankOptions): Promise<RerankDocumentResult[]>;
-}
-
-// =============================================================================
-// Ollama Implementation
-// =============================================================================
-
-export type OllamaConfig = {
-  baseUrl?: string;
-  defaultEmbedModel?: string;
-  defaultGenerateModel?: string;
-  defaultRerankModel?: string;
-};
-
-const DEFAULT_OLLAMA_URL = "http://localhost:11434";
-const DEFAULT_EMBED_MODEL = "embeddinggemma";
-const DEFAULT_GENERATE_MODEL = "qwen3:0.6b";
-const DEFAULT_RERANK_MODEL = "ExpedientFalcon/qwen3-reranker:0.6b-q8_0";
+import { DEFAULT_OLLAMA_URL, DEFAULT_EMBED_MODEL, DEFAULT_GENERATE_MODEL, DEFAULT_RERANK_MODEL } from "src/config";
 
 /**
  * Format text for embedding query
@@ -191,12 +66,18 @@ export class Ollama implements LLM {
   private defaultEmbedModel: string;
   private defaultGenerateModel: string;
   private defaultRerankModel: string;
+  private cache?: Database;
+  private cacheRepo?: CacheRepository;
 
   constructor(config: OllamaConfig = {}) {
     this.baseUrl = config.baseUrl || process.env.OLLAMA_URL || DEFAULT_OLLAMA_URL;
     this.defaultEmbedModel = config.defaultEmbedModel || DEFAULT_EMBED_MODEL;
     this.defaultGenerateModel = config.defaultGenerateModel || DEFAULT_GENERATE_MODEL;
     this.defaultRerankModel = config.defaultRerankModel || DEFAULT_RERANK_MODEL;
+    this.cache = config.cache;
+    if (this.cache) {
+      this.cacheRepo = new CacheRepository(this.cache);
+    }
   }
 
   /**
@@ -206,15 +87,25 @@ export class Ollama implements LLM {
     return this.baseUrl;
   }
 
+  /**
+   * Set the cache database for this instance
+   */
+  setCache(cache: Database | undefined): void {
+    this.cache = cache;
+    if (cache) {
+      this.cacheRepo = new CacheRepository(cache);
+    } else {
+      this.cacheRepo = undefined;
+    }
+  }
+
   // ==========================================================================
   // Core API methods
   // ==========================================================================
 
   async embed(text: string, options: EmbedOptions): Promise<EmbeddingResult | null> {
     const model = options.model || this.defaultEmbedModel;
-    const formatted = options.isQuery
-      ? formatQueryForEmbedding(text)
-      : formatDocForEmbedding(text, options.title);
+    const formatted = options.isQuery ? formatQueryForEmbedding(text) : formatDocForEmbedding(text, options.title);
 
     try {
       const response = await fetch(`${this.baseUrl}/api/embed`, {
@@ -227,7 +118,7 @@ export class Ollama implements LLM {
         return null;
       }
 
-      const data = await response.json() as { embeddings?: number[][] };
+      const data = (await response.json()) as { embeddings?: number[][] };
       if (!data.embeddings?.[0]) {
         return null;
       }
@@ -266,6 +157,34 @@ export class Ollama implements LLM {
       (requestBody.options as Record<string, unknown>).stop = options.stop;
     }
 
+    // Check cache
+    const cacheKey = this.cacheRepo ? this.cacheRepo.generateKey(`${this.baseUrl}/api/generate`, requestBody) : "";
+    if (this.cacheRepo && cacheKey) {
+      const cached = this.cacheRepo.get(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached) as {
+          response?: string;
+          done?: boolean;
+          logprobs?: { tokens?: string[]; token_logprobs?: number[] };
+        };
+
+        let logprobs: TokenLogProb[] | undefined;
+        if (data.logprobs?.tokens && data.logprobs?.token_logprobs) {
+          logprobs = data.logprobs.tokens.map((token, i) => ({
+            token,
+            logprob: data.logprobs!.token_logprobs![i],
+          }));
+        }
+
+        return {
+          text: data.response || "",
+          model,
+          logprobs,
+          done: data.done ?? true,
+        };
+      }
+    }
+
     try {
       const response = await fetch(`${this.baseUrl}/api/generate`, {
         method: "POST",
@@ -277,11 +196,16 @@ export class Ollama implements LLM {
         return null;
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         response?: string;
         done?: boolean;
         logprobs?: { tokens?: string[]; token_logprobs?: number[] };
       };
+
+      // Cache the result
+      if (this.cacheRepo && cacheKey) {
+        this.cacheRepo.set(cacheKey, JSON.stringify(data));
+      }
 
       // Parse logprobs if present
       let logprobs: TokenLogProb[] | undefined;
@@ -315,7 +239,7 @@ export class Ollama implements LLM {
         return { name: model, exists: false };
       }
 
-      const data = await response.json() as {
+      const data = (await response.json()) as {
         size?: number;
         modified_at?: string;
       };
@@ -392,11 +316,7 @@ Output exactly ${numVariations} variations, one per line, no numbering or bullet
     return [query, ...lines.slice(0, numVariations)];
   }
 
-  async rerank(
-    query: string,
-    documents: RerankDocument[],
-    options: RerankOptions
-  ): Promise<RerankResult> {
+  async rerank(query: string, documents: RerankDocument[], options: RerankOptions): Promise<RerankResult> {
     const results = await this.rerankerLogprobsCheck(query, documents, options);
 
     return {
@@ -408,7 +328,7 @@ Output exactly ${numVariations} variations, one per line, no numbering or bullet
   async rerankerLogprobsCheck(
     query: string,
     documents: RerankDocument[],
-    options: RerankOptions
+    options: RerankOptions,
   ): Promise<RerankDocumentResult[]> {
     const model = options.model || this.defaultRerankModel;
     const batchSize = options.batchSize || 5;
@@ -418,9 +338,7 @@ Output exactly ${numVariations} variations, one per line, no numbering or bullet
     // Process in batches
     for (let i = 0; i < documents.length; i += batchSize) {
       const batch = documents.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map((doc) => this.rerankSingle(query, doc, model))
-      );
+      const batchResults = await Promise.all(batch.map((doc) => this.rerankSingle(query, doc, model)));
       results.push(...batchResults);
     }
 
@@ -430,11 +348,7 @@ Output exactly ${numVariations} variations, one per line, no numbering or bullet
   /**
    * Rerank a single document - internal helper
    */
-  private async rerankSingle(
-    query: string,
-    doc: RerankDocument,
-    model: string
-  ): Promise<RerankDocumentResult> {
+  private async rerankSingle(query: string, doc: RerankDocument, model: string): Promise<RerankDocumentResult> {
     const systemPrompt = `Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".`;
 
     const instruct = `Given a search query, determine if the following document is relevant to the query. Consider both direct matches and related concepts.`;
@@ -536,4 +450,38 @@ export function getDefaultOllama(): Ollama {
  */
 export function setDefaultOllama(ollama: Ollama | null): void {
   defaultOllama = ollama;
+}
+
+/**
+ * Get LLM instance with optional database cache
+ */
+export function getLLM(db?: Database): Ollama {
+  const llm = getDefaultOllama();
+  if (db) {
+    llm.setCache(db);
+  }
+  return llm;
+}
+
+/**
+ * Auto-pull model if not found (with progress indicators)
+ */
+export async function ensureModelAvailable(model: string, onProgress?: (percent: number) => void): Promise<void> {
+  const llm = getDefaultOllama();
+  const info = await llm.modelExists(model);
+
+  if (info.exists) return;
+
+  console.log(`Model ${model} not found. Pulling...`);
+  if (onProgress) onProgress(-1); // Indeterminate
+
+  const success = await llm.pullModel(model, onProgress);
+
+  if (!success) {
+    if (onProgress) onProgress(-2); // Error
+    throw new Error(`Failed to pull model ${model}`);
+  }
+
+  if (onProgress) onProgress(100);
+  console.log(`Model ${model} pulled successfully.`);
 }

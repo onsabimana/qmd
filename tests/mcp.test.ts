@@ -10,7 +10,7 @@ import { Database } from "bun:sqlite";
 import * as sqliteVec from "sqlite-vec";
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { setDefaultOllama, Ollama } from "./llm";
+import { setDefaultOllama, Ollama } from "src/core/llm";
 
 // =============================================================================
 // Mock Ollama
@@ -21,7 +21,9 @@ const originalFetch = globalThis.fetch;
 
 const mockOllamaResponses: Record<string, (body: unknown) => Response> = {
   "/api/embed": () => {
-    const embedding = Array(768).fill(0).map(() => Math.random());
+    const embedding = Array(768)
+      .fill(0)
+      .map(() => Math.random());
     return new Response(JSON.stringify({ embeddings: [embedding] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -30,16 +32,22 @@ const mockOllamaResponses: Record<string, (body: unknown) => Response> = {
   "/api/generate": (body: unknown) => {
     const reqBody = body as { prompt?: string };
     if (reqBody.prompt?.includes("Judge") || reqBody.prompt?.includes("Document")) {
-      return new Response(JSON.stringify({
-        response: "yes",
-        done: true,
-        logprobs: { tokens: ["yes"], token_logprobs: [-0.1] },
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          response: "yes",
+          done: true,
+          logprobs: { tokens: ["yes"], token_logprobs: [-0.1] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     } else {
-      return new Response(JSON.stringify({
-        response: "expanded query variation 1\nexpanded query variation 2",
-        done: true,
-      }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(
+        JSON.stringify({
+          response: "expanded query variation 1\nexpanded query variation 2",
+          done: true,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
     }
   },
   "/api/show": () => {
@@ -75,9 +83,9 @@ let testDbPath: string;
 
 function initTestDatabase(db: Database): void {
   sqliteVec.load(db);
-  db.exec("PRAGMA journal_mode = WAL");
+  db.run("PRAGMA journal_mode = WAL");
 
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS collections (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pwd TEXT NOT NULL,
@@ -88,7 +96,7 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS path_contexts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       path_prefix TEXT NOT NULL UNIQUE,
@@ -97,7 +105,7 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS ollama_cache (
       hash TEXT PRIMARY KEY,
       result TEXT NOT NULL,
@@ -105,7 +113,7 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS documents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       collection_id INTEGER NOT NULL,
@@ -122,7 +130,7 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS content_vectors (
       hash TEXT NOT NULL,
       seq INTEGER NOT NULL DEFAULT 0,
@@ -133,7 +141,7 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
       name, body,
       content='documents',
@@ -142,14 +150,14 @@ function initTestDatabase(db: Database): void {
     )
   `);
 
-  db.exec(`
+  db.run(`
     CREATE TRIGGER IF NOT EXISTS documents_ai AFTER INSERT ON documents BEGIN
       INSERT INTO documents_fts(rowid, name, body) VALUES (new.id, new.name, new.body);
     END
   `);
 
   // Create vector table
-  db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS vectors_vec USING vec0(hash_seq TEXT PRIMARY KEY, embedding float[768])`);
+  db.run(`CREATE VIRTUAL TABLE IF NOT EXISTS vectors_vec USING vec0(hash_seq TEXT PRIMARY KEY, embedding float[768])`);
 }
 
 function seedTestData(db: Database): void {
@@ -160,14 +168,14 @@ function seedTestData(db: Database): void {
     "/test/docs",
     "**/*.md",
     now,
-    "Test documentation collection"
+    "Test documentation collection",
   );
 
   // Add path context
   db.prepare(`INSERT INTO path_contexts (path_prefix, context, created_at) VALUES (?, ?, ?)`).run(
     "/test/docs/meetings",
     "Meeting notes and transcripts",
-    now
+    now,
   );
 
   // Add test documents
@@ -225,8 +233,11 @@ function seedTestData(db: Database): void {
   const embedding = new Float32Array(768);
   for (let i = 0; i < 768; i++) embedding[i] = Math.random();
 
-  for (const doc of docs.slice(0, 4)) { // Skip large file for embeddings
-    db.prepare(`INSERT INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, 0, 0, 'embeddinggemma', ?)`).run(doc.hash, now);
+  for (const doc of docs.slice(0, 4)) {
+    // Skip large file for embeddings
+    db.prepare(
+      `INSERT INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, 0, 0, 'embeddinggemma', ?)`,
+    ).run(doc.hash, now);
     db.prepare(`INSERT INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`).run(`${doc.hash}_0`, embedding);
   }
 }
@@ -255,8 +266,8 @@ import {
   DEFAULT_RERANK_MODEL,
   DEFAULT_MULTI_GET_MAX_BYTES,
   createStore,
-} from "./store";
-import type { RankedResult } from "./store";
+} from "src/core/store";
+import type { RankedResult } from "src/core/store";
 // Note: searchResultsToMcpCsv no longer used in MCP - using structuredContent instead
 
 // =============================================================================
@@ -318,7 +329,7 @@ describe("MCP Server", () => {
 
     test("formats results as structured content", () => {
       const results = searchFTS(testDb, "api", 10);
-      const filtered = results.map(r => ({
+      const filtered = results.map((r) => ({
         file: r.displayPath,
         title: r.title,
         score: Math.round(r.score * 100) / 100,
@@ -374,17 +385,29 @@ describe("MCP Server", () => {
     test("performs RRF fusion on multiple result lists", () => {
       const list1: RankedResult[] = [
         { file: "/a", displayPath: "a.md", title: "A", body: "body", score: 1 },
-        { file: "/b", displayPath: "b.md", title: "B", body: "body", score: 0.8 },
+        {
+          file: "/b",
+          displayPath: "b.md",
+          title: "B",
+          body: "body",
+          score: 0.8,
+        },
       ];
       const list2: RankedResult[] = [
         { file: "/b", displayPath: "b.md", title: "B", body: "body", score: 1 },
-        { file: "/c", displayPath: "c.md", title: "C", body: "body", score: 0.9 },
+        {
+          file: "/c",
+          displayPath: "c.md",
+          title: "C",
+          body: "body",
+          score: 0.9,
+        },
       ];
 
       const fused = reciprocalRankFusion([list1, list2]);
       expect(fused.length).toBe(3);
       // B appears in both lists, should have higher score
-      const bResult = fused.find(r => r.file === "/b");
+      const bResult = fused.find((r) => r.file === "/b");
       expect(bResult).toBeDefined();
     });
 
@@ -407,13 +430,15 @@ describe("MCP Server", () => {
       for (const q of queries) {
         const ftsResults = searchFTS(testDb, q, 20);
         if (ftsResults.length > 0) {
-          rankedLists.push(ftsResults.map(r => ({
-            file: r.file,
-            displayPath: r.displayPath,
-            title: r.title,
-            body: r.body,
-            score: r.score,
-          })));
+          rankedLists.push(
+            ftsResults.map((r) => ({
+              file: r.file,
+              displayPath: r.displayPath,
+              title: r.title,
+              body: r.body,
+              score: r.score,
+            })),
+          );
         }
       }
 
@@ -425,9 +450,9 @@ describe("MCP Server", () => {
       const candidates = fused.slice(0, 10);
       const reranked = await rerank(
         query,
-        candidates.map(c => ({ file: c.file, text: c.body })),
+        candidates.map((c) => ({ file: c.file, text: c.body })),
         DEFAULT_RERANK_MODEL,
-        testDb
+        testDb,
       );
 
       expect(reranked.length).toBeGreaterThan(0);
@@ -521,8 +546,8 @@ describe("MCP Server", () => {
       const { files, errors } = getMultipleDocuments(testDb, "meetings/*.md");
       expect(errors.length).toBe(0);
       expect(files.length).toBe(2);
-      expect(files.some(f => f.displayPath === "meetings/meeting-2024-01.md")).toBe(true);
-      expect(files.some(f => f.displayPath === "meetings/meeting-2024-02.md")).toBe(true);
+      expect(files.some((f) => f.displayPath === "meetings/meeting-2024-01.md")).toBe(true);
+      expect(files.some((f) => f.displayPath === "meetings/meeting-2024-02.md")).toBe(true);
     });
 
     test("retrieves documents by comma-separated list", () => {
@@ -540,7 +565,7 @@ describe("MCP Server", () => {
 
     test("skips files larger than maxBytes", () => {
       const { files } = getMultipleDocuments(testDb, "*.md", undefined, 1000); // 1KB limit
-      const largeFile = files.find(f => f.displayPath === "large-file.md");
+      const largeFile = files.find((f) => f.displayPath === "large-file.md");
       expect(largeFile).toBeDefined();
       expect(largeFile?.skipped).toBe(true);
       if (largeFile?.skipped) {
@@ -600,25 +625,33 @@ describe("MCP Server", () => {
 
   describe("qmd:// resource", () => {
     test("lists all documents", () => {
-      const docs = testDb.prepare(`
+      const docs = testDb
+        .prepare(`
         SELECT display_path, title
         FROM documents
         WHERE active = 1
         ORDER BY modified_at DESC
         LIMIT 1000
-      `).all() as { display_path: string; title: string }[];
+      `)
+        .all() as { display_path: string; title: string }[];
 
       expect(docs.length).toBe(5);
-      expect(docs.map(d => d.display_path)).toContain("readme.md");
+      expect(docs.map((d) => d.display_path)).toContain("readme.md");
     });
 
     test("reads document by display_path", () => {
       const path = "readme.md";
-      const doc = testDb.prepare(`
+      const doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(path) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(path) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       expect(doc).not.toBeNull();
       expect(doc?.body).toContain("Project README");
@@ -629,11 +662,17 @@ describe("MCP Server", () => {
       const encodedPath = "meetings%2Fmeeting-2024-01.md";
       const decodedPath = decodeURIComponent(encodedPath);
 
-      const doc = testDb.prepare(`
+      const doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(decodedPath) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(decodedPath) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       expect(doc).not.toBeNull();
       expect(doc?.display_path).toBe("meetings/meeting-2024-01.md");
@@ -641,19 +680,31 @@ describe("MCP Server", () => {
 
     test("reads document by suffix match", () => {
       const path = "meeting-2024-01.md"; // without meetings/ prefix
-      let doc = testDb.prepare(`
+      let doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(path) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(path) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       if (!doc) {
-        doc = testDb.prepare(`
+        doc = testDb
+          .prepare(`
           SELECT filepath, display_path, body
           FROM documents
           WHERE display_path LIKE ? AND active = 1
           LIMIT 1
-        `).get(`%${path}`) as { filepath: string; display_path: string; body: string } | null;
+        `)
+          .get(`%${path}`) as {
+          filepath: string;
+          display_path: string;
+          body: string;
+        } | null;
       }
 
       expect(doc).not.toBeNull();
@@ -662,22 +713,34 @@ describe("MCP Server", () => {
 
     test("returns not found for missing document", () => {
       const path = "nonexistent.md";
-      const doc = testDb.prepare(`
+      const doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(path) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(path) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       expect(doc).toBeNull();
     });
 
     test("includes context in document body", () => {
       const path = "meetings/meeting-2024-01.md";
-      const doc = testDb.prepare(`
+      const doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(path) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(path) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       expect(doc).not.toBeNull();
       const context = getContextForFile(testDb, doc!.filepath);
@@ -695,7 +758,10 @@ describe("MCP Server", () => {
       // Test various URL encodings
       const testCases = [
         { encoded: "readme.md", decoded: "readme.md" },
-        { encoded: "meetings%2Fmeeting-2024-01.md", decoded: "meetings/meeting-2024-01.md" },
+        {
+          encoded: "meetings%2Fmeeting-2024-01.md",
+          decoded: "meetings/meeting-2024-01.md",
+        },
         { encoded: "api.md%3A10", decoded: "api.md:10" }, // with line number
       ];
 
@@ -717,19 +783,21 @@ describe("MCP Server", () => {
     test("handles URL-encoded paths with spaces", () => {
       // Add a document with spaces in the path
       const now = new Date().toISOString();
-      testDb.prepare(`
+      testDb
+        .prepare(`
         INSERT INTO documents (collection_id, name, title, hash, filepath, display_path, body, created_at, modified_at, active)
         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 1)
-      `).run(
-        "podcast with spaces.md",
-        "Podcast Episode",
-        "hash_spaces",
-        "/test/docs/External Podcast/2023 April - Interview.md",
-        "External Podcast/2023 April - Interview.md",
-        "# Podcast Episode\n\nInterview content here.",
-        now,
-        now
-      );
+      `)
+        .run(
+          "podcast with spaces.md",
+          "Podcast Episode",
+          "hash_spaces",
+          "/test/docs/External Podcast/2023 April - Interview.md",
+          "External Podcast/2023 April - Interview.md",
+          "# Podcast Episode\n\nInterview content here.",
+          now,
+          now,
+        );
 
       // Simulate URL-encoded path from MCP client
       const encodedPath = "External%20Podcast%2F2023%20April%20-%20Interview.md";
@@ -737,11 +805,17 @@ describe("MCP Server", () => {
 
       expect(decodedPath).toBe("External Podcast/2023 April - Interview.md");
 
-      const doc = testDb.prepare(`
+      const doc = testDb
+        .prepare(`
         SELECT filepath, display_path, body
         FROM documents
         WHERE display_path = ? AND active = 1
-      `).get(decodedPath) as { filepath: string; display_path: string; body: string } | null;
+      `)
+        .get(decodedPath) as {
+        filepath: string;
+        display_path: string;
+        body: string;
+      } | null;
 
       expect(doc).not.toBeNull();
       expect(doc?.display_path).toBe("External Podcast/2023 April - Interview.md");
@@ -765,14 +839,7 @@ QMD is your on-device search engine for markdown knowledge bases.`;
     });
 
     test("describes all available tools", () => {
-      const toolNames = [
-        "qmd_search",
-        "qmd_vsearch",
-        "qmd_query",
-        "qmd_get",
-        "qmd_multi_get",
-        "qmd_status",
-      ];
+      const toolNames = ["qmd_search", "qmd_vsearch", "qmd_query", "qmd_get", "qmd_multi_get", "qmd_status"];
 
       // Verify these are documented in the prompt
       const promptGuide = `
@@ -845,7 +912,10 @@ QMD is your on-device search engine for markdown knowledge bases.`;
     test("encodeQmdPath preserves slashes but encodes special chars", () => {
       // Helper function behavior (tested indirectly through resource URIs)
       const path = "External Podcast/2023 April - Interview.md";
-      const segments = path.split('/').map(s => encodeURIComponent(s)).join('/');
+      const segments = path
+        .split("/")
+        .map((s) => encodeURIComponent(s))
+        .join("/");
       expect(segments).toBe("External%20Podcast/2023%20April%20-%20Interview.md");
       expect(segments).toContain("/"); // Slashes preserved
       expect(segments).toContain("%20"); // Spaces encoded
@@ -853,7 +923,7 @@ QMD is your on-device search engine for markdown knowledge bases.`;
 
     test("search results have correct structure for structuredContent", () => {
       const results = searchFTS(testDb, "readme", 5);
-      const structured = results.map(r => ({
+      const structured = results.map((r) => ({
         file: r.displayPath,
         title: r.title,
         score: Math.round(r.score * 100) / 100,

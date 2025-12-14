@@ -23,7 +23,7 @@ const qmdScript = join(qmdDir, "qmd.ts");
 // Helper to run qmd command with test database
 async function runQmd(
   args: string[],
-  options: { cwd?: string; env?: Record<string, string>; dbPath?: string } = {}
+  options: { cwd?: string; env?: Record<string, string>; dbPath?: string } = {},
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const workingDir = options.cwd || fixturesDir;
   const dbPath = options.dbPath || testDbPath;
@@ -75,7 +75,7 @@ This is a test project for QMD CLI testing.
 - Full-text search with BM25
 - Vector similarity search
 - Hybrid search with reranking
-`
+`,
   );
 
   await writeFile(
@@ -98,7 +98,7 @@ Date: 2024-01-15
 1. Alice to update documentation
 2. Bob to fix authentication bug
 3. Charlie to review pull requests
-`
+`,
   );
 
   await writeFile(
@@ -114,7 +114,7 @@ Date: 2024-01-15
 - Improve search performance
 - Add caching layer
 - Optimize database queries
-`
+`,
   );
 
   await writeFile(
@@ -135,7 +135,7 @@ Retrieve a specific document.
 
 ### POST /index
 Index new documents.
-`
+`,
   );
 });
 
@@ -281,10 +281,7 @@ describe("CLI Multi-Get Command", () => {
   });
 
   test("retrieves documents by comma-separated paths", async () => {
-    const { stdout, exitCode } = await runQmd([
-      "multi-get",
-      "README.md,notes/meeting.md",
-    ]);
+    const { stdout, exitCode } = await runQmd(["multi-get", "README.md,notes/meeting.md"]);
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Test Project");
     expect(stdout).toContain("Team Meeting");
@@ -302,7 +299,9 @@ describe("CLI Update Command", () => {
   });
 
   test("updates all collections", async () => {
-    const { stdout, exitCode } = await runQmd(["update"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["update"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Updating");
   });
@@ -315,11 +314,7 @@ describe("CLI Add-Context Command", () => {
   });
 
   test("adds context to a path", async () => {
-    const { stdout, exitCode } = await runQmd([
-      "add-context",
-      "notes",
-      "Personal notes and meeting logs",
-    ]);
+    const { stdout, exitCode } = await runQmd(["add-context", "notes", "Personal notes and meeting logs"]);
     expect(exitCode).toBe(0);
   });
 
@@ -401,17 +396,16 @@ describe("CLI Search with Collection Filter", () => {
     // Use a fresh database for this test suite
     localDbPath = getFreshDbPath();
     // Create multiple collections
-    await runQmd(["collection", "add", ".", "--mask", "notes/*.md"], { dbPath: localDbPath });
-    await runQmd(["collection", "add", ".", "--mask", "docs/*.md"], { dbPath: localDbPath });
+    await runQmd(["collection", "add", ".", "--mask", "notes/*.md"], {
+      dbPath: localDbPath,
+    });
+    await runQmd(["collection", "add", ".", "--mask", "docs/*.md"], {
+      dbPath: localDbPath,
+    });
   });
 
   test("filters search by collection name", async () => {
-    const { stdout, exitCode } = await runQmd([
-      "search",
-      "-c",
-      "notes",
-      "meeting",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["search", "-c", "notes", "meeting"], { dbPath: localDbPath });
     expect(exitCode).toBe(0);
     // Should find results from notes collection
     expect(stdout.toLowerCase()).toContain("meeting");
@@ -429,12 +423,9 @@ describe("CLI Context Management", () => {
   });
 
   test("add global context with /", async () => {
-    const { stdout, exitCode } = await runQmd([
-      "context",
-      "add",
-      "/",
-      "Global system context",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["context", "add", "/", "Global system context"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ Added global context");
     expect(stdout).toContain("Global system context");
@@ -442,17 +433,13 @@ describe("CLI Context Management", () => {
 
   test("list contexts", async () => {
     // Add a global context first
-    await runQmd([
-      "context",
-      "add",
-      "/",
-      "Test context",
-    ], { dbPath: localDbPath });
+    await runQmd(["context", "add", "/", "Test context"], {
+      dbPath: localDbPath,
+    });
 
-    const { stdout, exitCode } = await runQmd([
-      "context",
-      "list",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["context", "list"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Configured Contexts");
     expect(stdout).toContain("Test context");
@@ -460,58 +447,40 @@ describe("CLI Context Management", () => {
 
   test("add context to virtual path", async () => {
     // Collection name should be "fixtures" (basename of the fixtures directory)
-    const { stdout, exitCode } = await runQmd([
-      "context",
-      "add",
-      "qmd://fixtures/notes",
-      "Context for notes subdirectory",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(
+      ["context", "add", "qmd://fixtures/notes", "Context for notes subdirectory"],
+      { dbPath: localDbPath },
+    );
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ Added context for: qmd://fixtures/notes");
   });
 
   test("remove global context", async () => {
     // Add a global context first
-    await runQmd([
-      "context",
-      "add",
-      "/",
-      "Global context to remove",
-    ], { dbPath: localDbPath });
+    await runQmd(["context", "add", "/", "Global context to remove"], {
+      dbPath: localDbPath,
+    });
 
-    const { stdout, exitCode } = await runQmd([
-      "context",
-      "rm",
-      "/",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["context", "rm", "/"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ Removed");
   });
 
   test("remove virtual path context", async () => {
     // Add a context first
-    await runQmd([
-      "context",
-      "add",
-      "qmd://fixtures/notes",
-      "Context to remove",
-    ], { dbPath: localDbPath });
+    await runQmd(["context", "add", "qmd://fixtures/notes", "Context to remove"], { dbPath: localDbPath });
 
-    const { stdout, exitCode } = await runQmd([
-      "context",
-      "rm",
-      "qmd://fixtures/notes",
-    ], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["context", "rm", "qmd://fixtures/notes"], { dbPath: localDbPath });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ Removed context for: qmd://fixtures/notes");
   });
 
   test("fails to remove non-existent context", async () => {
-    const { stdout, stderr, exitCode } = await runQmd([
-      "context",
-      "rm",
-      "qmd://nonexistent/path",
-    ], { dbPath: localDbPath });
+    const { stdout, stderr, exitCode } = await runQmd(["context", "rm", "qmd://nonexistent/path"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(1);
     expect(stderr || stdout).toContain("not found");
   });
@@ -535,14 +504,18 @@ describe("CLI ls Command", () => {
   });
 
   test("lists files in a collection", async () => {
-    const { stdout, exitCode } = await runQmd(["ls", "fixtures"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["ls", "fixtures"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("qmd://fixtures/README.md");
     expect(stdout).toContain("qmd://fixtures/notes/meeting.md");
   });
 
   test("lists files with path prefix", async () => {
-    const { stdout, exitCode } = await runQmd(["ls", "fixtures/notes"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["ls", "fixtures/notes"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("qmd://fixtures/notes/meeting.md");
     expect(stdout).toContain("qmd://fixtures/notes/ideas.md");
@@ -551,13 +524,17 @@ describe("CLI ls Command", () => {
   });
 
   test("lists files with virtual path", async () => {
-    const { stdout, exitCode } = await runQmd(["ls", "qmd://fixtures/docs"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["ls", "qmd://fixtures/docs"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("qmd://fixtures/docs/api.md");
   });
 
   test("handles non-existent collection", async () => {
-    const { stderr, exitCode } = await runQmd(["ls", "nonexistent"], { dbPath: localDbPath });
+    const { stderr, exitCode } = await runQmd(["ls", "nonexistent"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Collection not found");
   });
@@ -574,7 +551,9 @@ describe("CLI Collection Commands", () => {
   });
 
   test("lists collections", async () => {
-    const { stdout, exitCode } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("Collections");
     expect(stdout).toContain("fixtures");
@@ -585,7 +564,9 @@ describe("CLI Collection Commands", () => {
 
   test("removes a collection", async () => {
     // First verify the collection exists
-    const { stdout: listBefore } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout: listBefore } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(listBefore).toContain("fixtures");
 
     // Remove it
@@ -595,7 +576,9 @@ describe("CLI Collection Commands", () => {
     expect(stdout).toContain("Deleted");
 
     // Verify it's gone
-    const { stdout: listAfter } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout: listAfter } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(listAfter).not.toContain("fixtures");
   });
 
@@ -606,37 +589,49 @@ describe("CLI Collection Commands", () => {
   });
 
   test("handles missing remove argument", async () => {
-    const { stderr, exitCode } = await runQmd(["collection", "remove"], { dbPath: localDbPath });
+    const { stderr, exitCode } = await runQmd(["collection", "remove"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Usage:");
   });
 
   test("handles unknown subcommand", async () => {
-    const { stderr, exitCode } = await runQmd(["collection", "invalid"], { dbPath: localDbPath });
+    const { stderr, exitCode } = await runQmd(["collection", "invalid"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Unknown subcommand");
   });
 
   test("renames a collection", async () => {
     // First verify the collection exists
-    const { stdout: listBefore } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout: listBefore } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(listBefore).toMatch(/^fixtures$/m); // Collection name on its own line
 
     // Rename it
-    const { stdout, exitCode } = await runQmd(["collection", "rename", "fixtures", "my-fixtures"], { dbPath: localDbPath });
+    const { stdout, exitCode } = await runQmd(["collection", "rename", "fixtures", "my-fixtures"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(0);
     expect(stdout).toContain("✓ Renamed collection 'fixtures' to 'my-fixtures'");
     expect(stdout).toContain("qmd://fixtures/");
     expect(stdout).toContain("qmd://my-fixtures/");
 
     // Verify the new name exists and old name is gone
-    const { stdout: listAfter } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout: listAfter } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(listAfter).toMatch(/^my-fixtures$/m); // Collection name on its own line
     expect(listAfter).not.toMatch(/^fixtures$/m); // Old name should not appear as collection name
   });
 
   test("handles renaming non-existent collection", async () => {
-    const { stderr, exitCode } = await runQmd(["collection", "rename", "nonexistent", "newname"], { dbPath: localDbPath });
+    const { stderr, exitCode } = await runQmd(["collection", "rename", "nonexistent", "newname"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode).toBe(1);
     expect(stderr).toContain("Collection not found");
   });
@@ -653,7 +648,9 @@ describe("CLI Collection Commands", () => {
     expect(addResult.exitCode).toBe(0);
 
     // Verify both collections exist
-    const { stdout: listBoth } = await runQmd(["collection", "list"], { dbPath: localDbPath });
+    const { stdout: listBoth } = await runQmd(["collection", "list"], {
+      dbPath: localDbPath,
+    });
     expect(listBoth).toMatch(/^fixtures$/m);
     expect(listBoth).toMatch(/^second$/m);
 
@@ -668,7 +665,9 @@ describe("CLI Collection Commands", () => {
     expect(exitCode1).toBe(1);
     expect(stderr1).toContain("Usage:");
 
-    const { stderr: stderr2, exitCode: exitCode2 } = await runQmd(["collection", "rename", "fixtures"], { dbPath: localDbPath });
+    const { stderr: stderr2, exitCode: exitCode2 } = await runQmd(["collection", "rename", "fixtures"], {
+      dbPath: localDbPath,
+    });
     expect(exitCode2).toBe(1);
     expect(stderr2).toContain("Usage:");
   });

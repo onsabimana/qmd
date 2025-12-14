@@ -31,7 +31,7 @@ import {
   type DocumentResult,
   type SearchResult,
   type RankedResult,
-} from "./store.js";
+} from "src/core/store";
 
 // =============================================================================
 // Ollama Mocking
@@ -44,7 +44,9 @@ const originalFetch = globalThis.fetch;
 const mockOllamaResponses: Record<string, (body: unknown) => Response> = {
   "/api/embed": (body: unknown) => {
     // Return mock embeddings (768 dimensions)
-    const embedding = Array(768).fill(0).map(() => Math.random());
+    const embedding = Array(768)
+      .fill(0)
+      .map(() => Math.random());
     return new Response(JSON.stringify({ embeddings: [embedding] }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -55,21 +57,27 @@ const mockOllamaResponses: Record<string, (body: unknown) => Response> = {
     // Check if this is a rerank request or query expansion
     if (reqBody.prompt?.includes("yes") || reqBody.prompt?.includes("no") || reqBody.prompt?.includes("Judge")) {
       // Rerank response
-      return new Response(JSON.stringify({
-        response: "yes",
-        logprobs: [{ token: "yes", logprob: -0.1 }],
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          response: "yes",
+          logprobs: [{ token: "yes", logprob: -0.1 }],
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     } else {
       // Query expansion response
-      return new Response(JSON.stringify({
-        response: "expanded query variation 1\nexpanded query variation 2",
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({
+          response: "expanded query variation 1\nexpanded query variation 2",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
   },
   "/api/show": () => {
@@ -152,7 +160,7 @@ async function insertTestDocument(
     displayPath?: string;
     body?: string;
     active?: number;
-  }
+  },
 ): Promise<number> {
   const now = new Date().toISOString();
   const name = opts.name || "test-doc";
@@ -162,7 +170,7 @@ async function insertTestDocument(
   const active = opts.active ?? 1;
 
   // Generate hash from body if not provided
-  const hash = opts.hash || await hashContent(body);
+  const hash = opts.hash || (await hashContent(body));
 
   // Insert content (with OR IGNORE for deduplication)
   db.prepare(`
@@ -171,28 +179,29 @@ async function insertTestDocument(
   `).run(hash, body, now);
 
   // Insert document
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     INSERT INTO documents (collection_id, path, title, hash, created_at, modified_at, active)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(collectionId, path, title, hash, now, now, active);
+  `)
+    .run(collectionId, path, title, hash, now, now, active);
 
   return Number(result.lastInsertRowid);
 }
 
 // Helper to create a test collection
-function createTestCollection(
-  db: Database,
-  options: { pwd?: string; glob?: string; name?: string } = {}
-): number {
+function createTestCollection(db: Database, options: { pwd?: string; glob?: string; name?: string } = {}): number {
   const pwd = options.pwd || "/test/collection";
   const glob = options.glob || "**/*.md";
-  const name = options.name || pwd.split('/').filter(Boolean).pop() || 'test';
+  const name = options.name || pwd.split("/").filter(Boolean).pop() || "test";
   const now = new Date().toISOString();
 
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     INSERT INTO collections (name, pwd, glob_pattern, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?)
-  `).run(name, pwd, glob, now, now);
+  `)
+    .run(name, pwd, glob, now, now);
   return Number(result.lastInsertRowid);
 }
 
@@ -300,11 +309,13 @@ describe("Store Creation", () => {
     const store = await createTestStore();
 
     // Check tables exist
-    const tables = store.db.prepare(`
+    const tables = store.db
+      .prepare(`
       SELECT name FROM sqlite_master WHERE type='table' ORDER BY name
-    `).all() as { name: string }[];
+    `)
+      .all() as { name: string }[];
 
-    const tableNames = tables.map(t => t.name);
+    const tableNames = tables.map((t) => t.name);
     expect(tableNames).toContain("collections");
     expect(tableNames).toContain("documents");
     expect(tableNames).toContain("documents_fts");
@@ -317,7 +328,9 @@ describe("Store Creation", () => {
 
   test("createStore sets WAL journal mode", async () => {
     const store = await createTestStore();
-    const result = store.db.prepare("PRAGMA journal_mode").get() as { journal_mode: string };
+    const result = store.db.prepare("PRAGMA journal_mode").get() as {
+      journal_mode: string;
+    };
     expect(result.journal_mode).toBe("wal");
     await cleanupTestDb(store);
   });
@@ -433,9 +446,7 @@ describe("Document Chunking", () => {
     // Chunks should end at paragraph breaks when possible
     for (const chunk of chunks.slice(0, -1)) {
       // Most chunks should end near a paragraph break
-      const endsNearParagraph = chunk.text.endsWith("\n\n") ||
-        chunk.text.endsWith(".") ||
-        chunk.text.endsWith("\n");
+      const endsNearParagraph = chunk.text.endsWith("\n\n") || chunk.text.endsWith(".") || chunk.text.endsWith("\n");
       // This is a soft check - not all chunks can end at breaks
     }
     expect(chunks.length).toBeGreaterThan(1);
@@ -536,7 +547,10 @@ describe("Path Context", () => {
 describe("Collections", () => {
   test("getCollectionIdByName finds collection by path suffix", async () => {
     const store = await createTestStore();
-    const collectionId = createTestCollection(store.db, { pwd: "/home/user/projects/myapp", glob: "**/*.md" });
+    const collectionId = createTestCollection(store.db, {
+      pwd: "/home/user/projects/myapp",
+      glob: "**/*.md",
+    });
 
     const found = store.getCollectionIdByName("myapp");
     expect(found).toBe(collectionId);
@@ -638,8 +652,14 @@ describe("FTS Search", () => {
 
   test("searchFTS filters by collectionId", async () => {
     const store = await createTestStore();
-    const collection1 = createTestCollection(store.db, { pwd: "/path/one", glob: "**/*.md" });
-    const collection2 = createTestCollection(store.db, { pwd: "/path/two", glob: "**/*.md" });
+    const collection1 = createTestCollection(store.db, {
+      pwd: "/path/one",
+      glob: "**/*.md",
+    });
+    const collection2 = createTestCollection(store.db, {
+      pwd: "/path/two",
+      glob: "**/*.md",
+    });
 
     insertTestDocument(store.db, collection1, {
       name: "doc1",
@@ -773,7 +793,9 @@ describe("Document Retrieval", () => {
         body: "The actual body content",
       });
 
-      const result = store.findDocument("/path/mydoc.md", { includeBody: true });
+      const result = store.findDocument("/path/mydoc.md", {
+        includeBody: true,
+      });
       expect("error" in result).toBe(false);
       if (!("error" in result)) {
         expect(result.body).toBe("The actual body content");
@@ -1096,7 +1118,7 @@ describe("Snippet Extraction", () => {
     // Header should show line position and context info
     expect(snippet).toMatch(/^@@ -\d+,\d+ @@ \(\d+ before, \d+ after\)/);
     expect(linesBefore).toBe(1); // Line 1 comes before
-    expect(linesAfter).toBe(0);  // Snippet includes to end (lines 2-5)
+    expect(linesAfter).toBe(0); // Snippet includes to end (lines 2-5)
     expect(snippetLines).toBe(4); // Lines 2, 3, 4, 5
   });
 
@@ -1120,29 +1142,29 @@ describe("Snippet Extraction", () => {
 
     const [, startLine, count, before, after] = headerMatch!;
     expect(parseInt(startLine)).toBe(2); // Snippet starts at line 2 (B)
-    expect(parseInt(count)).toBe(4);     // 4 lines: B, C keyword, D, E
-    expect(parseInt(before)).toBe(1);    // A is before
-    expect(parseInt(after)).toBe(3);     // F, G, H are after
+    expect(parseInt(count)).toBe(4); // 4 lines: B, C keyword, D, E
+    expect(parseInt(before)).toBe(1); // A is before
+    expect(parseInt(after)).toBe(3); // F, G, H are after
   });
 
   test("extractSnippet at document start shows 0 before", () => {
     const body = "First line keyword\nSecond\nThird\nFourth\nFifth";
     const { linesBefore, linesAfter, snippetLines, line } = extractSnippet(body, "keyword", 500);
 
-    expect(line).toBe(1);         // Keyword on first line
-    expect(linesBefore).toBe(0);  // Nothing before
+    expect(line).toBe(1); // Keyword on first line
+    expect(linesBefore).toBe(0); // Nothing before
     expect(snippetLines).toBe(3); // First, Second, Third (bestLine-1 to bestLine+3, clamped)
-    expect(linesAfter).toBe(2);   // Fourth, Fifth
+    expect(linesAfter).toBe(2); // Fourth, Fifth
   });
 
   test("extractSnippet at document end shows 0 after", () => {
     const body = "First\nSecond\nThird\nFourth\nFifth keyword";
     const { linesBefore, linesAfter, snippetLines, line } = extractSnippet(body, "keyword", 500);
 
-    expect(line).toBe(5);         // Keyword on last line
-    expect(linesBefore).toBe(3);  // First, Second, Third before snippet
+    expect(line).toBe(5); // Keyword on last line
+    expect(linesBefore).toBe(3); // First, Second, Third before snippet
     expect(snippetLines).toBe(2); // Fourth, Fifth keyword (bestLine-1 to bestLine+3, clamped)
-    expect(linesAfter).toBe(0);   // Nothing after
+    expect(linesAfter).toBe(0); // Nothing after
   });
 
   test("extractSnippet with single line document", () => {
@@ -1183,11 +1205,7 @@ describe("Reciprocal Rank Fusion", () => {
   });
 
   test("RRF combines single list correctly", () => {
-    const list1 = [
-      makeResult("doc1", 0.9),
-      makeResult("doc2", 0.8),
-      makeResult("doc3", 0.7),
-    ];
+    const list1 = [makeResult("doc1", 0.9), makeResult("doc2", 0.8), makeResult("doc3", 0.7)];
 
     const fused = reciprocalRankFusion([list1]);
 
@@ -1204,9 +1222,9 @@ describe("Reciprocal Rank Fusion", () => {
     const fused = reciprocalRankFusion([list1, list2]);
 
     // doc2 appears in both lists, should have higher combined score
-    expect(fused.find(r => r.file === "doc2")).toBeDefined();
-    expect(fused.find(r => r.file === "doc1")).toBeDefined();
-    expect(fused.find(r => r.file === "doc3")).toBeDefined();
+    expect(fused.find((r) => r.file === "doc2")).toBeDefined();
+    expect(fused.find((r) => r.file === "doc1")).toBeDefined();
+    expect(fused.find((r) => r.file === "doc3")).toBeDefined();
   });
 
   test("RRF respects weights", () => {
@@ -1229,8 +1247,8 @@ describe("Reciprocal Rank Fusion", () => {
 
     // doc1 should get +0.05 bonus for being #1
     // doc2 should get +0.02 bonus for being #2-3
-    const doc1 = fused.find(r => r.file === "doc1");
-    const doc2 = fused.find(r => r.file === "doc2");
+    const doc1 = fused.find((r) => r.file === "doc1");
+    const doc2 = fused.find((r) => r.file === "doc2");
 
     expect(doc1!.score).toBeGreaterThan(doc2!.score);
   });
@@ -1286,7 +1304,10 @@ describe("Index Status", () => {
 
   test("getStatus reports collection info", async () => {
     const store = await createTestStore();
-    const collectionId = createTestCollection(store.db, { pwd: "/test/path", glob: "**/*.md" });
+    const collectionId = createTestCollection(store.db, {
+      pwd: "/test/path",
+      glob: "**/*.md",
+    });
     insertTestDocument(store.db, collectionId, { name: "doc1" });
 
     const status = store.getStatus();
@@ -1391,7 +1412,7 @@ describe("Fuzzy Matching", () => {
 
     const matches = store.matchFilesByGlob("journals/*.md");
     expect(matches).toHaveLength(2);
-    expect(matches.every(m => m.displayPath.startsWith("journals/"))).toBe(true);
+    expect(matches.every((m) => m.displayPath.startsWith("journals/"))).toBe(true);
 
     await cleanupTestDb(store);
   });
@@ -1406,17 +1427,21 @@ describe("Vector Table", () => {
     const store = await createTestStore();
 
     // Initially no vector table
-    let exists = store.db.prepare(`
+    let exists = store.db
+      .prepare(`
       SELECT name FROM sqlite_master WHERE type='table' AND name='vectors_vec'
-    `).get();
+    `)
+      .get();
     expect(exists).toBeFalsy(); // null or undefined
 
     // Create vector table
     store.ensureVecTable(768);
 
-    exists = store.db.prepare(`
+    exists = store.db
+      .prepare(`
       SELECT name FROM sqlite_master WHERE type='table' AND name='vectors_vec'
-    `).get();
+    `)
+      .get();
     expect(exists).toBeTruthy();
 
     await cleanupTestDb(store);
@@ -1429,17 +1454,21 @@ describe("Vector Table", () => {
     store.ensureVecTable(768);
 
     // Check dimensions
-    let tableInfo = store.db.prepare(`
+    let tableInfo = store.db
+      .prepare(`
       SELECT sql FROM sqlite_master WHERE type='table' AND name='vectors_vec'
-    `).get() as { sql: string };
+    `)
+      .get() as { sql: string };
     expect(tableInfo.sql).toContain("float[768]");
 
     // Recreate with different dimensions
     store.ensureVecTable(1024);
 
-    tableInfo = store.db.prepare(`
+    tableInfo = store.db
+      .prepare(`
       SELECT sql FROM sqlite_master WHERE type='table' AND name='vectors_vec'
-    `).get() as { sql: string };
+    `)
+      .get() as { sql: string };
     expect(tableInfo.sql).toContain("float[1024]");
 
     await cleanupTestDb(store);
@@ -1453,7 +1482,10 @@ describe("Vector Table", () => {
 describe("Integration", () => {
   test("full document lifecycle: create, search, retrieve", async () => {
     const store = await createTestStore();
-    const collectionId = createTestCollection(store.db, { pwd: "/test/notes", glob: "**/*.md" });
+    const collectionId = createTestCollection(store.db, {
+      pwd: "/test/notes",
+      glob: "**/*.md",
+    });
 
     // Add context
     addPathContext(store.db, "/test/notes", "Personal notes");
@@ -1494,7 +1526,9 @@ describe("Integration", () => {
     }
 
     // Multi-get
-    const { docs, errors } = store.findDocuments("notes/*.md", { includeBody: true });
+    const { docs, errors } = store.findDocuments("notes/*.md", {
+      includeBody: true,
+    });
     expect(errors).toHaveLength(0);
     expect(docs).toHaveLength(2);
 
@@ -1505,8 +1539,14 @@ describe("Integration", () => {
     const store1 = await createTestStore();
     const store2 = await createTestStore();
 
-    const col1 = createTestCollection(store1.db, { pwd: "/store1", glob: "**/*.md" });
-    const col2 = createTestCollection(store2.db, { pwd: "/store2", glob: "**/*.md" });
+    const col1 = createTestCollection(store1.db, {
+      pwd: "/store1",
+      glob: "**/*.md",
+    });
+    const col2 = createTestCollection(store2.db, {
+      pwd: "/store2",
+      glob: "**/*.md",
+    });
 
     insertTestDocument(store1.db, col1, {
       name: "doc1",
@@ -1648,9 +1688,15 @@ describe("Ollama Integration (Mocked)", () => {
 
     // Create vector table and insert a vector
     store.ensureVecTable(768);
-    const embedding = Array(768).fill(0).map(() => Math.random());
-    store.db.prepare(`INSERT INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, 0, 0, 'test', ?)`).run(hash, new Date().toISOString());
-    store.db.prepare(`INSERT INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`).run(`${hash}_0`, new Float32Array(embedding));
+    const embedding = Array(768)
+      .fill(0)
+      .map(() => Math.random());
+    store.db
+      .prepare(`INSERT INTO content_vectors (hash, seq, pos, model, embedded_at) VALUES (?, 0, 0, 'test', ?)`)
+      .run(hash, new Date().toISOString());
+    store.db
+      .prepare(`INSERT INTO vectors_vec (hash_seq, embedding) VALUES (?, ?)`)
+      .run(`${hash}_0`, new Float32Array(embedding));
 
     const results = await store.searchVec("test query", "embeddinggemma", 10);
     expect(results).toHaveLength(1);
@@ -1804,11 +1850,13 @@ describe("Edge Cases", () => {
 
     // Insert multiple documents concurrently
     const inserts = Array.from({ length: 10 }, (_, i) =>
-      Promise.resolve(insertTestDocument(store.db, collectionId, {
-        name: `concurrent${i}`,
-        body: `Content ${i} searchterm`,
-        displayPath: `concurrent${i}.md`,
-      }))
+      Promise.resolve(
+        insertTestDocument(store.db, collectionId, {
+          name: `concurrent${i}`,
+          body: `Content ${i} searchterm`,
+          displayPath: `concurrent${i}.md`,
+        }),
+      ),
     );
 
     await Promise.all(inserts);
@@ -1830,8 +1878,12 @@ describe("Content-Addressable Storage", () => {
     const store = await createTestStore();
 
     // Create two collections
-    const collection1 = createTestCollection(store.db, { pwd: "/path/collection1" });
-    const collection2 = createTestCollection(store.db, { pwd: "/path/collection2" });
+    const collection1 = createTestCollection(store.db, {
+      pwd: "/path/collection1",
+    });
+    const collection2 = createTestCollection(store.db, {
+      pwd: "/path/collection2",
+    });
 
     // Add same content to both collections
     const content = "# Same Content\n\nThis is the same content in two places.";
@@ -1857,7 +1909,9 @@ describe("Content-Addressable Storage", () => {
     expect(hash1Db.hash).toBe(hash1);
 
     // There should only be one entry in the content table
-    const contentCount = store.db.prepare(`SELECT COUNT(*) as count FROM content WHERE hash = ?`).get(hash1) as { count: number };
+    const contentCount = store.db.prepare(`SELECT COUNT(*) as count FROM content WHERE hash = ?`).get(hash1) as {
+      count: number;
+    };
     expect(contentCount.count).toBe(1);
 
     await cleanupTestDb(store);
@@ -1867,8 +1921,12 @@ describe("Content-Addressable Storage", () => {
     const store = await createTestStore();
 
     // Create two collections
-    const collection1 = createTestCollection(store.db, { pwd: "/path/collection1" });
-    const collection2 = createTestCollection(store.db, { pwd: "/path/collection2" });
+    const collection1 = createTestCollection(store.db, {
+      pwd: "/path/collection1",
+    });
+    const collection2 = createTestCollection(store.db, {
+      pwd: "/path/collection2",
+    });
 
     // Add same content to both collections
     const sharedContent = "# Shared Content\n\nThis is shared.";
@@ -1907,10 +1965,12 @@ describe("Content-Addressable Storage", () => {
     store.db.prepare(`DELETE FROM collections WHERE id = ?`).run(collection1);
 
     // Clean up orphaned content (mimics what the CLI does)
-    store.db.prepare(`
+    store.db
+      .prepare(`
       DELETE FROM content
       WHERE hash NOT IN (SELECT DISTINCT hash FROM documents WHERE active = 1)
-    `).run();
+    `)
+      .run();
 
     // Shared content should still exist (used by collection2)
     const sharedExists2 = store.db.prepare(`SELECT hash FROM content WHERE hash = ?`).get(sharedHash);
@@ -1932,7 +1992,9 @@ describe("Content-Addressable Storage", () => {
     // Create 5 collections with the same content
     const collectionIds = [];
     for (let i = 0; i < 5; i++) {
-      const collId = createTestCollection(store.db, { pwd: `/path/collection${i}` });
+      const collId = createTestCollection(store.db, {
+        pwd: `/path/collection${i}`,
+      });
       collectionIds.push(collId);
 
       await insertTestDocument(store.db, collId, {
@@ -1943,11 +2005,15 @@ describe("Content-Addressable Storage", () => {
     }
 
     // Should have 5 documents
-    const docCount = store.db.prepare(`SELECT COUNT(*) as count FROM documents WHERE active = 1`).get() as { count: number };
+    const docCount = store.db.prepare(`SELECT COUNT(*) as count FROM documents WHERE active = 1`).get() as {
+      count: number;
+    };
     expect(docCount.count).toBe(5);
 
     // But only 1 content entry
-    const contentCount = store.db.prepare(`SELECT COUNT(*) as count FROM content WHERE hash = ?`).get(sharedHash) as { count: number };
+    const contentCount = store.db.prepare(`SELECT COUNT(*) as count FROM content WHERE hash = ?`).get(sharedHash) as {
+      count: number;
+    };
     expect(contentCount.count).toBe(1);
 
     // All documents should point to the same hash

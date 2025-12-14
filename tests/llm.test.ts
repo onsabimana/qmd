@@ -17,7 +17,7 @@ import {
   type GenerateResult,
   type RerankDocumentResult,
   type TokenLogProb,
-} from "./llm.js";
+} from "src/core/llm";
 
 // =============================================================================
 // Mock Server Setup
@@ -102,10 +102,7 @@ function setEmbedHandler(embeddings: number[][]): void {
   }));
 }
 
-function setGenerateHandler(
-  response: string,
-  logprobs?: { tokens: string[]; token_logprobs: number[] }
-): void {
+function setGenerateHandler(response: string, logprobs?: { tokens: string[]; token_logprobs: number[] }): void {
   mockHandlers.set("/api/generate", () => ({
     status: 200,
     body: {
@@ -222,7 +219,10 @@ describe("Ollama.embed", () => {
     const embedding = [0.1, 0.2, 0.3, 0.4, 0.5];
     setEmbedHandler([embedding]);
 
-    const result = await ollama.embed("test query", { model: "test-model", isQuery: true });
+    const result = await ollama.embed("test query", {
+      model: "test-model",
+      isQuery: true,
+    });
 
     expect(result).not.toBeNull();
     expect(result!.embedding).toEqual(embedding);
@@ -255,7 +255,10 @@ describe("Ollama.embed", () => {
 
   test("returns null on API error", async () => {
     const ollama = createOllama();
-    mockHandlers.set("/api/embed", () => ({ status: 500, body: { error: "Server error" } }));
+    mockHandlers.set("/api/embed", () => ({
+      status: 500,
+      body: { error: "Server error" },
+    }));
 
     const result = await ollama.embed("test", { model: "test-model" });
     expect(result).toBeNull();
@@ -279,7 +282,9 @@ describe("Ollama.embed", () => {
 
   test("handles high-dimensional embeddings", async () => {
     const ollama = createOllama();
-    const embedding = Array(768).fill(0).map((_, i) => i / 768);
+    const embedding = Array(768)
+      .fill(0)
+      .map((_, i) => i / 768);
     setEmbedHandler([embedding]);
 
     const result = await ollama.embed("test", { model: "test-model" });
@@ -313,7 +318,10 @@ describe("Ollama.generate", () => {
       token_logprobs: [-0.1],
     });
 
-    const result = await ollama.generate("prompt", { model: "test-model", logprobs: true });
+    const result = await ollama.generate("prompt", {
+      model: "test-model",
+      logprobs: true,
+    });
 
     expect(result!.logprobs).toBeDefined();
     expect(result!.logprobs).toHaveLength(1);
@@ -328,7 +336,10 @@ describe("Ollama.generate", () => {
       token_logprobs: [-0.5, -0.3],
     });
 
-    const result = await ollama.generate("prompt", { model: "test-model", logprobs: true });
+    const result = await ollama.generate("prompt", {
+      model: "test-model",
+      logprobs: true,
+    });
 
     expect(result!.logprobs).toHaveLength(2);
     expect(result!.logprobs![0]).toEqual({ token: "hello", logprob: -0.5 });
@@ -367,7 +378,10 @@ describe("Ollama.generate", () => {
 
   test("returns null on API error", async () => {
     const ollama = createOllama();
-    mockHandlers.set("/api/generate", () => ({ status: 500, body: { error: "Error" } }));
+    mockHandlers.set("/api/generate", () => ({
+      status: 500,
+      body: { error: "Error" },
+    }));
 
     const result = await ollama.generate("prompt", { model: "test-model" });
     expect(result).toBeNull();
@@ -472,7 +486,10 @@ describe("Ollama.expandQuery", () => {
 
   test("returns only original query on API failure", async () => {
     const ollama = createOllama();
-    mockHandlers.set("/api/generate", () => ({ status: 500, body: { error: "Error" } }));
+    mockHandlers.set("/api/generate", () => ({
+      status: 500,
+      body: { error: "Error" },
+    }));
 
     const result = await ollama.expandQuery("query", "test-model");
 
@@ -536,7 +553,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
       { file: "doc2.md", text: "Other content" },
     ];
 
-    const results = await ollama.rerankerLogprobsCheck("query", docs, { model: "test-model" });
+    const results = await ollama.rerankerLogprobsCheck("query", docs, {
+      model: "test-model",
+    });
 
     expect(results).toHaveLength(2);
     expect(results[0].file).toBe("doc1.md");
@@ -549,11 +568,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     // -0.1 logprob = ~0.905 confidence
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-0.1] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(true);
     expect(results[0].confidence).toBeCloseTo(Math.exp(-0.1), 3);
@@ -566,11 +583,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     // -2.0 logprob = ~0.135 confidence
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-2.0] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(true);
     expect(results[0].confidence).toBeCloseTo(Math.exp(-2.0), 3);
@@ -582,11 +597,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     // -0.05 logprob = ~0.95 confidence
     setGenerateHandler("no", { tokens: ["no"], token_logprobs: [-0.05] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(false);
     expect(results[0].confidence).toBeCloseTo(Math.exp(-0.05), 3);
@@ -598,11 +611,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     // -1.5 logprob = ~0.22 confidence
     setGenerateHandler("no", { tokens: ["no"], token_logprobs: [-1.5] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(false);
     expect(results[0].score).toBeGreaterThan(0.3); // Higher score for uncertain "no"
@@ -612,11 +623,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     const ollama = createOllama();
     setGenerateHandler("maybe", { tokens: ["maybe"], token_logprobs: [-0.5] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(false);
     expect(results[0].score).toBe(0.3); // Neutral score
@@ -624,13 +633,14 @@ describe("Ollama.rerankerLogprobsCheck", () => {
 
   test("handles API failure gracefully", async () => {
     const ollama = createOllama();
-    mockHandlers.set("/api/generate", () => ({ status: 500, body: { error: "Error" } }));
+    mockHandlers.set("/api/generate", () => ({
+      status: 500,
+      body: { error: "Error" },
+    }));
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].relevant).toBe(false);
     expect(results[0].score).toBe(0);
@@ -641,12 +651,17 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     const ollama = createOllama();
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-0.1] });
 
-    const docs = Array(10).fill(null).map((_, i) => ({
-      file: `doc${i}.md`,
-      text: `content ${i}`,
-    }));
+    const docs = Array(10)
+      .fill(null)
+      .map((_, i) => ({
+        file: `doc${i}.md`,
+        text: `content ${i}`,
+      }));
 
-    await ollama.rerankerLogprobsCheck("query", docs, { model: "test-model", batchSize: 3 });
+    await ollama.rerankerLogprobsCheck("query", docs, {
+      model: "test-model",
+      batchSize: 3,
+    });
 
     // Should process in batches: 3 + 3 + 3 + 1 = 10 calls
     expect(mockCallLog).toHaveLength(10);
@@ -659,10 +674,14 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     await ollama.rerankerLogprobsCheck(
       "search query",
       [{ file: "test.md", text: "document content", title: "Test Doc" }],
-      { model: "test-model" }
+      { model: "test-model" },
     );
 
-    const body = mockCallLog[0].body as { prompt: string; raw: boolean; logprobs: boolean };
+    const body = mockCallLog[0].body as {
+      prompt: string;
+      raw: boolean;
+      logprobs: boolean;
+    };
     expect(body.prompt).toContain("<Query>: search query");
     expect(body.prompt).toContain("<Document Title>: Test Doc");
     expect(body.prompt).toContain("document content");
@@ -674,11 +693,9 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     const ollama = createOllama();
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-0.1] });
 
-    await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "path/to/document.md", text: "content" }],
-      { model: "test-model" }
-    );
+    await ollama.rerankerLogprobsCheck("query", [{ file: "path/to/document.md", text: "content" }], {
+      model: "test-model",
+    });
 
     const body = mockCallLog[0].body as { prompt: string };
     expect(body.prompt).toContain("<Document Title>: document");
@@ -689,11 +706,7 @@ describe("Ollama.rerankerLogprobsCheck", () => {
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-0.1] });
 
     const longText = "x".repeat(10000);
-    await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: longText }],
-      { model: "test-model" }
-    );
+    await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: longText }], { model: "test-model" });
 
     const body = mockCallLog[0].body as { prompt: string };
     // Should be truncated to ~4000 chars + "..."
@@ -711,9 +724,23 @@ describe("Ollama.rerank", () => {
     mockHandlers.set("/api/generate", () => {
       callCount++;
       if (callCount === 1) {
-        return { status: 200, body: { response: "no", done: true, logprobs: { tokens: ["no"], token_logprobs: [-0.1] } } };
+        return {
+          status: 200,
+          body: {
+            response: "no",
+            done: true,
+            logprobs: { tokens: ["no"], token_logprobs: [-0.1] },
+          },
+        };
       }
-      return { status: 200, body: { response: "yes", done: true, logprobs: { tokens: ["yes"], token_logprobs: [-0.1] } } };
+      return {
+        status: 200,
+        body: {
+          response: "yes",
+          done: true,
+          logprobs: { tokens: ["yes"], token_logprobs: [-0.1] },
+        },
+      };
     });
 
     const docs = [
@@ -787,11 +814,9 @@ describe("Logprob Mathematics", () => {
     const ollama = createOllama();
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [0] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].confidence).toBe(1.0);
     expect(results[0].score).toBe(1.0); // 0.5 + 0.5 * 1.0
@@ -802,11 +827,9 @@ describe("Logprob Mathematics", () => {
     const logprob = -Math.log(2); // ≈ -0.693
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [logprob] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].confidence).toBeCloseTo(0.5, 3);
     expect(results[0].score).toBeCloseTo(0.75, 3); // 0.5 + 0.5 * 0.5
@@ -816,11 +839,9 @@ describe("Logprob Mathematics", () => {
     const ollama = createOllama();
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-10] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     expect(results[0].confidence).toBeLessThan(0.0001);
     expect(results[0].score).toBeCloseTo(0.5, 2); // Nearly just the base 0.5
@@ -835,7 +856,9 @@ describe("Edge Cases", () => {
   test("handles empty document list", async () => {
     const ollama = createOllama();
 
-    const results = await ollama.rerankerLogprobsCheck("query", [], { model: "test-model" });
+    const results = await ollama.rerankerLogprobsCheck("query", [], {
+      model: "test-model",
+    });
     expect(results).toHaveLength(0);
   });
 
@@ -843,11 +866,9 @@ describe("Edge Cases", () => {
     const ollama = createOllama();
     setGenerateHandler("yes", { tokens: ["yes"], token_logprobs: [-0.1] });
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "x" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "x" }], {
+      model: "test-model",
+    });
 
     expect(results).toHaveLength(1);
   });
@@ -859,7 +880,7 @@ describe("Edge Cases", () => {
     const results = await ollama.rerankerLogprobsCheck(
       "日本語クエリ",
       [{ file: "doc.md", text: "日本語コンテンツ 🎉" }],
-      { model: "test-model" }
+      { model: "test-model" },
     );
 
     expect(results).toHaveLength(1);
@@ -876,7 +897,7 @@ describe("Edge Cases", () => {
     const results = await ollama.rerankerLogprobsCheck(
       "query",
       [{ file: "path/to/file with spaces.md", text: "content" }],
-      { model: "test-model" }
+      { model: "test-model" },
     );
 
     expect(results[0].file).toBe("path/to/file with spaces.md");
@@ -890,11 +911,9 @@ describe("Edge Cases", () => {
       body: { response: "yes", done: true },
     }));
 
-    const results = await ollama.rerankerLogprobsCheck(
-      "query",
-      [{ file: "doc.md", text: "content" }],
-      { model: "test-model" }
-    );
+    const results = await ollama.rerankerLogprobsCheck("query", [{ file: "doc.md", text: "content" }], {
+      model: "test-model",
+    });
 
     // Should still work, with logprob defaulting to 0
     expect(results[0].logprob).toBe(0);
